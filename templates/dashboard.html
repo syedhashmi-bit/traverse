@@ -107,9 +107,9 @@
       </div>
 
       <!-- Peers table -->
-      <div class="noc-panel noc-panel-flex">
+      <div class="noc-panel noc-panel-flex" style="flex: 1;">
         <div class="noc-panel-hdr">
-          <span class="noc-panel-title">PEERS ({{ total_peers }}/50)</span>
+          <span class="noc-panel-title">PEERS ({{ total_peers }}/20)</span>
           <a href="{{ url_for('peers.list_peers') }}" class="noc-action-btn">ALL</a>
           <a href="{{ url_for('peers.create') }}" class="noc-action-btn">+ NEW</a>
         </div>
@@ -121,7 +121,6 @@
                 <th style="width:18px;"></th>
                 <th>NAME</th>
                 <th class="hide-mobile">VPN IP</th>
-                <th class="hide-mobile">DEV</th>
                 <th class="hide-mobile">HS</th>
                 <th>RX / TX</th>
                 <th style="width:22px;"></th>
@@ -138,10 +137,6 @@
                   <a href="{{ url_for('peers.detail', peer_id=peer.id) }}" class="noc-link">{{ peer.name }}</a>
                 </td>
                 <td class="mono dim hide-mobile">{{ peer.vpn_ip }}</td>
-                <td class="dim hide-mobile">
-                  {% set icons = {'phone':'📱','laptop':'💻','desktop':'🖥','tablet':'📋','router':'🌐','other':'◈'} %}
-                  {{ icons.get(peer.device or 'other', '◈') }}
-                </td>
                 <td class="mono dim hide-mobile" id="hs-{{ peer.id }}">{{ peer.last_handshake_short }}</td>
                 <td class="mono" style="white-space:nowrap;">
                   <span class="noc-rx" id="rx-{{ peer.id }}">↓ {{ format_bytes(peer.rx_bytes or 0) }}</span>
@@ -186,13 +181,29 @@
 
       <!-- WG raw output -->
       {% if wg_status.output %}
-      <div class="noc-panel noc-panel-flex" style="max-height:220px; flex-shrink:0;">
+      <div class="noc-panel" style="display:flex; flex-direction:column; min-height:160px;">
         <div class="noc-panel-hdr"><span class="noc-panel-title">WG SHOW</span></div>
-        <div class="noc-pre-wrap">
+        <div class="noc-pre-wrap" style="max-height:420px;">
           <pre class="noc-pre">{{ wg_status.output }}</pre>
         </div>
       </div>
       {% endif %}
+
+      <!-- Speedtest -->
+      <div class="noc-panel">
+        <div class="noc-panel-hdr">
+          <span class="noc-panel-title">SPEEDTEST</span>
+          <button class="noc-action-btn" id="st-run-btn">▶ RUN</button>
+        </div>
+        <div style="padding:10px 14px 8px;">
+          <div style="font-family:var(--mono); font-size:13px; display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+            <span style="color:var(--info);">↓ <span id="st-dl" style="font-weight:700;">--</span> Mbps</span>
+            <span style="color:var(--accent);">↑ <span id="st-ul" style="font-weight:700;">--</span> Mbps</span>
+            <span style="color:var(--text-muted);">ping <span id="st-ping">--</span> ms</span>
+          </div>
+          <div style="font-size:10px; color:var(--text-dim); margin-top:5px; font-family:var(--mono);" id="st-ts">no data</div>
+        </div>
+      </div>
 
       <!-- Quick nav -->
       <div class="noc-panel">
@@ -415,11 +426,115 @@
             spd.textContent = 'no data';
           }
         }
+        // Sync speedtest widget with latest DB result if not currently running
+        if (d.last_speedtest && !window._stRunning) {
+          const s = d.last_speedtest;
+          stUpdate(s.download_mbps, s.upload_mbps, s.ping_ms, s.tested_at);
+        }
       })
       .catch(() => {});
   }
   refreshHealth();
   setInterval(refreshHealth, 30000);
+})();
+
+/* ── Speedtest widget ─────────────────────────────────────── */
+(function () {
+  let _stPoll = null;
+  window._stRunning = false;
+
+  function stRelTime(isoStr) {
+    if (!isoStr) return 'no data';
+    const d   = new Date(isoStr.replace(' ', 'T'));
+    const age = Math.floor((Date.now() - d.getTime()) / 1000);
+    if (isNaN(age) || age < 0) return 'just now';
+    if (age < 60)    return 'just now';
+    if (age < 3600)  return 'last run ' + Math.floor(age / 60) + 'min ago';
+    if (age < 86400) return 'last run ' + Math.floor(age / 3600) + 'h ago';
+    return 'last run ' + Math.floor(age / 86400) + 'd ago';
+  }
+
+  window.stUpdate = function(dl, ul, ping, ts) {
+    const g = id => document.getElementById(id);
+    if (g('st-dl'))   g('st-dl').textContent   = dl   !== null && dl   !== undefined ? dl   : '--';
+    if (g('st-ul'))   g('st-ul').textContent   = ul   !== null && ul   !== undefined ? ul   : '--';
+    if (g('st-ping')) g('st-ping').textContent = ping !== null && ping !== undefined ? ping : '--';
+    if (g('st-ts'))   g('st-ts').textContent   = ts ? stRelTime(ts) : 'no data';
+  };
+
+  function stBusy(yes) {
+    const btn = document.getElementById('st-run-btn');
+    if (!btn) return;
+    window._stRunning  = yes;
+    btn.textContent    = yes ? '⟳ RUNNING...' : '▶ RUN';
+    btn.disabled       = yes;
+    btn.style.opacity  = yes ? '0.5' : '';
+  }
+
+  function stPollStatus() {
+    fetch('/api/speedtest/status')
+      .then(r => r.json())
+      .then(d => {
+        if (d.running) return;
+        clearInterval(_stPoll); _stPoll = null;
+        stBusy(false);
+        if (d.result) {
+          const r = d.result;
+          stUpdate(r.download, r.upload, r.ping, new Date().toISOString());
+          // Re-read from DB after a moment to get the stored tested_at
+          setTimeout(() => {
+            fetch('/api/server/health').then(rr => rr.json()).then(h => {
+              if (h.last_speedtest) {
+                const s = h.last_speedtest;
+                stUpdate(s.download_mbps, s.upload_mbps, s.ping_ms, s.tested_at);
+              }
+            }).catch(() => {});
+          }, 1500);
+        } else if (d.error) {
+          const ts = document.getElementById('st-ts');
+          if (ts) ts.textContent = 'error: ' + d.error.slice(0, 50);
+        }
+      })
+      .catch(() => {});
+  }
+
+  document.getElementById('st-run-btn').addEventListener('click', function () {
+    fetch('/api/speedtest/run', { method: 'POST' })
+      .then(r => r.json())
+      .then(d => {
+        if (d.status === 'running' || d.status === 'already_running') {
+          stBusy(true);
+          const ts = document.getElementById('st-ts');
+          if (ts) ts.textContent = 'running… (may take up to 60s)';
+          if (!_stPoll) _stPoll = setInterval(stPollStatus, 2000);
+        }
+      })
+      .catch(() => {});
+  });
+
+  // Load last result on page open
+  fetch('/api/server/health')
+    .then(r => r.json())
+    .then(h => {
+      if (h.last_speedtest) {
+        const s = h.last_speedtest;
+        stUpdate(s.download_mbps, s.upload_mbps, s.ping_ms, s.tested_at);
+      }
+    })
+    .catch(() => {});
+
+  // Resume polling if a test was already running before page load
+  fetch('/api/speedtest/status')
+    .then(r => r.json())
+    .then(d => {
+      if (d.running) {
+        stBusy(true);
+        const ts = document.getElementById('st-ts');
+        if (ts) ts.textContent = 'running… (may take up to 60s)';
+        _stPoll = setInterval(stPollStatus, 2000);
+      }
+    })
+    .catch(() => {});
 })();
 </script>
 {% endblock %}

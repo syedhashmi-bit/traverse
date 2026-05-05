@@ -51,7 +51,7 @@ def list_peers():
 @peers_bp.route('/create', methods=['GET', 'POST'])
 @login_required
 def create():
-    MAX_PEERS = 50
+    MAX_PEERS = 20
 
     if request.method == 'GET':
         current_count = count_peers()
