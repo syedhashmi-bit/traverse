@@ -1,0 +1,490 @@
+import sqlite3
+import os
+from contextlib import contextmanager
+from dotenv import load_dotenv
+
+load_dotenv()
+
+_DB_PATH = None
+
+def get_db_path():
+    global _DB_PATH
+    if _DB_PATH is None:
+        raw = os.getenv('DATABASE_PATH', 'database.db')
+        if os.path.isabs(raw):
+            _DB_PATH = raw
+        else:
+            _DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), raw)
+    return _DB_PATH
+
+@contextmanager
+def get_db():
+    conn = sqlite3.connect(get_db_path())
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+def init_db():
+    with get_db() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS peers (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT    NOT NULL UNIQUE,
+                private_key TEXT    NOT NULL,
+                public_key  TEXT    NOT NULL UNIQUE,
+                preshared_key TEXT  NOT NULL,
+                vpn_ip      TEXT    NOT NULL UNIQUE,
+                allowed_ips TEXT    NOT NULL DEFAULT '0.0.0.0/0',
+                dns         TEXT    NOT NULL DEFAULT '1.1.1.1',
+                endpoint    TEXT    NOT NULL,
+                enabled     INTEGER NOT NULL DEFAULT 1,
+                created_at  TEXT    NOT NULL,
+                updated_at  TEXT    NOT NULL,
+                last_handshake TEXT,
+                rx_bytes    INTEGER DEFAULT 0,
+                tx_bytes    INTEGER DEFAULT 0
+            )
+        """)
+    migrate_db()
+
+
+def migrate_db():
+    """Idempotent — adds columns / tables introduced after initial schema."""
+    with get_db() as conn:
+        for col, definition in [
+            ('notes',                  "TEXT NOT NULL DEFAULT ''"),
+            ('device',                 "TEXT NOT NULL DEFAULT 'other'"),
+            ('expires_at',             "TEXT"),
+            ('config_regenerated_at',  "TEXT"),
+            ('last_ping_ms',           "REAL"),
+            ('last_ping_at',           "TEXT"),
+            ('geo_country',            "TEXT"),
+            ('geo_city',               "TEXT"),
+            ('geo_lat',                "REAL"),
+            ('geo_lon',                "REAL"),
+            ('geo_cached_at',          "TEXT"),
+            ('geo_country_code',       "TEXT"),
+            ('geo_failed_at',          "TEXT"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE peers ADD COLUMN {col} {definition}")
+            except Exception:
+                pass  # already exists
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS traffic_samples (
+                peer_id  INTEGER NOT NULL,
+                day      TEXT    NOT NULL,
+                rx_bytes INTEGER NOT NULL DEFAULT 0,
+                tx_bytes INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (peer_id, day),
+                FOREIGN KEY (peer_id) REFERENCES peers(id) ON DELETE CASCADE
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS connection_events (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                peer_id     INTEGER NOT NULL,
+                event_type  TEXT    NOT NULL,
+                timestamp   TEXT    NOT NULL,
+                peer_vpn_ip TEXT    NOT NULL,
+                FOREIGN KEY (peer_id) REFERENCES peers(id) ON DELETE CASCADE
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS alerts (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                type       TEXT    NOT NULL,
+                message    TEXT    NOT NULL,
+                peer_id    INTEGER,
+                severity   TEXT    NOT NULL DEFAULT 'info',
+                seen       INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT    NOT NULL,
+                FOREIGN KEY (peer_id) REFERENCES peers(id) ON DELETE SET NULL
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS peer_bandwidth_snapshots (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                peer_id     INTEGER NOT NULL,
+                rx_bytes    INTEGER NOT NULL DEFAULT 0,
+                tx_bytes    INTEGER NOT NULL DEFAULT 0,
+                recorded_at TEXT    NOT NULL,
+                FOREIGN KEY (peer_id) REFERENCES peers(id) ON DELETE CASCADE
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS speedtest_results (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                download_mbps REAL    NOT NULL,
+                upload_mbps   REAL    NOT NULL,
+                ping_ms       REAL    NOT NULL,
+                server_name   TEXT    NOT NULL DEFAULT '',
+                tested_at     TEXT    NOT NULL
+            )
+        """)
+
+
+def count_peers():
+    with get_db() as conn:
+        return conn.execute("SELECT COUNT(*) FROM peers").fetchone()[0]
+
+
+def get_all_peers():
+    with get_db() as conn:
+        return [dict(r) for r in conn.execute(
+            "SELECT * FROM peers ORDER BY created_at DESC"
+        )]
+
+
+def get_peer_by_id(peer_id):
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM peers WHERE id = ?", (peer_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_peer_by_name(name):
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM peers WHERE name = ?", (name,)).fetchone()
+        return dict(row) if row else None
+
+
+def create_peer(name, private_key, public_key, preshared_key,
+                vpn_ip, dns, endpoint, allowed_ips='0.0.0.0/0'):
+    from datetime import datetime
+    now = datetime.utcnow().isoformat()
+    with get_db() as conn:
+        conn.execute("""
+            INSERT INTO peers
+              (name, private_key, public_key, preshared_key, vpn_ip,
+               allowed_ips, dns, endpoint, enabled, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        """, (name, private_key, public_key, preshared_key, vpn_ip,
+              allowed_ips, dns, endpoint, now, now))
+        row = conn.execute("SELECT last_insert_rowid() AS id").fetchone()
+        return row['id']
+
+
+def update_peer_stats(public_key, last_handshake, rx_bytes, tx_bytes):
+    from datetime import datetime
+    now = datetime.utcnow().isoformat()
+    with get_db() as conn:
+        conn.execute("""
+            UPDATE peers
+               SET last_handshake = ?, rx_bytes = ?, tx_bytes = ?, updated_at = ?
+             WHERE public_key = ?
+        """, (last_handshake, rx_bytes, tx_bytes, now, public_key))
+
+
+def update_peer_notes(peer_id, notes, device):
+    from datetime import datetime
+    now = datetime.utcnow().isoformat()
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE peers SET notes = ?, device = ?, updated_at = ? WHERE id = ?",
+            (notes, device, now, peer_id)
+        )
+
+
+def set_peer_enabled(peer_id, enabled):
+    from datetime import datetime
+    now = datetime.utcnow().isoformat()
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE peers SET enabled = ?, updated_at = ? WHERE id = ?",
+            (1 if enabled else 0, now, peer_id)
+        )
+
+
+def delete_peer(peer_id):
+    with get_db() as conn:
+        conn.execute("DELETE FROM peers WHERE id = ?", (peer_id,))
+
+
+def upsert_traffic_sample(peer_id, day, rx_bytes, tx_bytes):
+    with get_db() as conn:
+        conn.execute("""
+            INSERT INTO traffic_samples (peer_id, day, rx_bytes, tx_bytes)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(peer_id, day) DO UPDATE SET
+                rx_bytes = excluded.rx_bytes,
+                tx_bytes = excluded.tx_bytes
+        """, (peer_id, day, rx_bytes, tx_bytes))
+
+
+def get_peer_daily_traffic(peer_id, days=30):
+    """Return last N days of samples, oldest first."""
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT day, rx_bytes, tx_bytes
+              FROM traffic_samples
+             WHERE peer_id = ?
+             ORDER BY day DESC
+             LIMIT ?
+        """, (peer_id, days)).fetchall()
+    return [dict(r) for r in reversed(rows)]
+
+
+# ── Expiry ────────────────────────────────────────────────────────────────────
+
+def update_peer_expiry(peer_id, expires_at):
+    """Set or clear expiry. expires_at is an ISO date string 'YYYY-MM-DD' or None."""
+    from datetime import datetime
+    now = datetime.utcnow().isoformat()
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE peers SET expires_at = ?, updated_at = ? WHERE id = ?",
+            (expires_at or None, now, peer_id)
+        )
+
+
+def disable_expired_peers():
+    """Disable all enabled peers whose expiry date has passed. Returns list of dicts."""
+    from datetime import datetime
+    today = datetime.utcnow().strftime('%Y-%m-%d')
+    now   = datetime.utcnow().isoformat()
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT id, name, public_key FROM peers
+             WHERE enabled = 1
+               AND expires_at IS NOT NULL
+               AND expires_at <= ?
+        """, (today,)).fetchall()
+        disabled = [dict(r) for r in rows]
+        for r in disabled:
+            conn.execute(
+                "UPDATE peers SET enabled = 0, updated_at = ? WHERE id = ?",
+                (now, r['id'])
+            )
+    return disabled
+
+
+def count_expired_peers():
+    from datetime import datetime
+    today = datetime.utcnow().strftime('%Y-%m-%d')
+    with get_db() as conn:
+        return conn.execute("""
+            SELECT COUNT(*) FROM peers
+             WHERE expires_at IS NOT NULL AND expires_at <= ?
+        """, (today,)).fetchone()[0]
+
+
+# ── Key regeneration ──────────────────────────────────────────────────────────
+
+def update_peer_keys(peer_id, private_key, public_key, preshared_key):
+    from datetime import datetime
+    now = datetime.utcnow().isoformat()
+    with get_db() as conn:
+        conn.execute("""
+            UPDATE peers
+               SET private_key = ?, public_key = ?, preshared_key = ?,
+                   config_regenerated_at = ?, updated_at = ?
+             WHERE id = ?
+        """, (private_key, public_key, preshared_key, now, now, peer_id))
+
+
+# ── Connection events ─────────────────────────────────────────────────────────
+
+def log_connection_event(peer_id, event_type, peer_vpn_ip):
+    from datetime import datetime
+    with get_db() as conn:
+        conn.execute("""
+            INSERT INTO connection_events (peer_id, event_type, timestamp, peer_vpn_ip)
+            VALUES (?, ?, ?, ?)
+        """, (peer_id, event_type, datetime.utcnow().isoformat(), peer_vpn_ip))
+
+
+def get_connection_events(limit=200):
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT ce.id, ce.peer_id, ce.event_type, ce.timestamp, ce.peer_vpn_ip,
+                   COALESCE(p.name, '[deleted]') AS peer_name
+              FROM connection_events ce
+              LEFT JOIN peers p ON p.id = ce.peer_id
+             ORDER BY ce.timestamp DESC
+             LIMIT ?
+        """, (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_peer_connection_events(peer_id, limit=10):
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT id, peer_id, event_type, timestamp, peer_vpn_ip
+              FROM connection_events
+             WHERE peer_id = ?
+             ORDER BY timestamp DESC
+             LIMIT ?
+        """, (peer_id, limit)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def trim_connection_events(max_rows=1000):
+    with get_db() as conn:
+        count = conn.execute("SELECT COUNT(*) FROM connection_events").fetchone()[0]
+        if count > max_rows:
+            conn.execute("""
+                DELETE FROM connection_events WHERE id IN (
+                    SELECT id FROM connection_events
+                     ORDER BY timestamp ASC LIMIT ?
+                )
+            """, (count - max_rows,))
+
+
+# ── Ping ──────────────────────────────────────────────────────────────────────
+
+def update_peer_ping(peer_id, ping_ms):
+    from datetime import datetime
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE peers SET last_ping_ms = ?, last_ping_at = ? WHERE id = ?",
+            (ping_ms, datetime.utcnow().isoformat(), peer_id)
+        )
+
+
+# ── Geo cache ─────────────────────────────────────────────────────────────────
+
+def update_peer_geo(peer_id, country, city, lat, lon, country_code=''):
+    from datetime import datetime
+    with get_db() as conn:
+        conn.execute("""
+            UPDATE peers
+               SET geo_country = ?, geo_city = ?, geo_lat = ?, geo_lon = ?,
+                   geo_cached_at = ?, geo_country_code = ?, geo_failed_at = NULL
+             WHERE id = ?
+        """, (country, city, lat, lon, datetime.utcnow().isoformat(), country_code, peer_id))
+
+
+def update_peer_geo_failed(peer_id):
+    from datetime import datetime
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE peers SET geo_failed_at = ? WHERE id = ?",
+            (datetime.utcnow().isoformat(), peer_id)
+        )
+
+
+# ── Alerts ────────────────────────────────────────────────────────────────────
+
+def create_alert(type_, message, peer_id=None, severity='info'):
+    """Insert alert only when no identical unseen alert already exists."""
+    from datetime import datetime
+    with get_db() as conn:
+        existing = conn.execute("""
+            SELECT id FROM alerts
+             WHERE type = ? AND COALESCE(peer_id, -1) = COALESCE(?, -1) AND seen = 0
+             LIMIT 1
+        """, (type_, peer_id)).fetchone()
+        if existing:
+            return
+        conn.execute("""
+            INSERT INTO alerts (type, message, peer_id, severity, seen, created_at)
+            VALUES (?, ?, ?, ?, 0, ?)
+        """, (type_, message, peer_id, severity, datetime.utcnow().isoformat()))
+
+
+def get_all_alerts(limit=200):
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT a.id, a.type, a.message, a.peer_id, a.severity, a.seen, a.created_at,
+                   p.name AS peer_name
+              FROM alerts a
+              LEFT JOIN peers p ON p.id = a.peer_id
+             ORDER BY a.created_at DESC
+             LIMIT ?
+        """, (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def count_unseen_alerts():
+    with get_db() as conn:
+        return conn.execute("SELECT COUNT(*) FROM alerts WHERE seen = 0").fetchone()[0]
+
+
+def mark_all_alerts_seen():
+    with get_db() as conn:
+        conn.execute("UPDATE alerts SET seen = 1")
+
+
+def dismiss_alert(alert_id):
+    with get_db() as conn:
+        conn.execute("UPDATE alerts SET seen = 1 WHERE id = ?", (alert_id,))
+
+
+# ── Bandwidth snapshots ───────────────────────────────────────────────────────
+
+def record_bandwidth_snapshot(peer_id, rx_bytes, tx_bytes):
+    from datetime import datetime
+    with get_db() as conn:
+        conn.execute("""
+            INSERT INTO peer_bandwidth_snapshots (peer_id, rx_bytes, tx_bytes, recorded_at)
+            VALUES (?, ?, ?, ?)
+        """, (peer_id, rx_bytes, tx_bytes, datetime.utcnow().isoformat()))
+        count = conn.execute(
+            "SELECT COUNT(*) FROM peer_bandwidth_snapshots WHERE peer_id = ?",
+            (peer_id,)
+        ).fetchone()[0]
+        if count > 1440:
+            conn.execute("""
+                DELETE FROM peer_bandwidth_snapshots WHERE id IN (
+                    SELECT id FROM peer_bandwidth_snapshots
+                     WHERE peer_id = ? ORDER BY recorded_at ASC LIMIT ?
+                )
+            """, (peer_id, count - 1440))
+
+
+def get_peer_bandwidth_snapshots(peer_id, limit=61):
+    """Return up to `limit` snapshots oldest-first (61 → 60 rate deltas)."""
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT id, rx_bytes, tx_bytes, recorded_at
+              FROM peer_bandwidth_snapshots
+             WHERE peer_id = ?
+             ORDER BY recorded_at DESC
+             LIMIT ?
+        """, (peer_id, limit)).fetchall()
+    return [dict(r) for r in reversed(rows)]
+
+
+# ── Speedtest results ─────────────────────────────────────────────────────────
+
+def record_speedtest(download_mbps, upload_mbps, ping_ms, server_name=''):
+    from datetime import datetime
+    with get_db() as conn:
+        conn.execute("""
+            INSERT INTO speedtest_results (download_mbps, upload_mbps, ping_ms, server_name, tested_at)
+            VALUES (?, ?, ?, ?, ?)
+        """, (download_mbps, upload_mbps, ping_ms, server_name, datetime.utcnow().isoformat()))
+        conn.execute("""
+            DELETE FROM speedtest_results WHERE id NOT IN (
+                SELECT id FROM speedtest_results ORDER BY tested_at DESC LIMIT 5
+            )
+        """)
+
+
+def get_speedtest_results(limit=5):
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM speedtest_results ORDER BY tested_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_last_speedtest():
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM speedtest_results ORDER BY tested_at DESC LIMIT 1"
+        ).fetchone()
+    return dict(row) if row else None

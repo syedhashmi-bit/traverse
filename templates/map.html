@@ -1,0 +1,371 @@
+{% extends 'base.html' %}
+{% block title %}Connection Map{% endblock %}
+{% block page_title %}Connection Map{% endblock %}
+
+{% block content %}
+<div class="map-grid" style="display:grid; grid-template-columns:1fr 320px; gap:20px; height:calc(100vh - 120px);">
+
+  <!-- Map -->
+  <div class="card" style="overflow:hidden; position:relative;">
+    <div id="map" style="width:100%; height:100%; min-height:500px; border-radius:var(--radius-lg);"></div>
+    <div id="map-loader" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+         background:var(--surface); padding:16px 24px; border-radius:var(--radius); border:1px solid var(--border);
+         color:var(--text-muted); font-size:0.85rem;">
+      Loading peer locations…
+    </div>
+  </div>
+
+  <!-- Peer list panel -->
+  <div style="display:flex; flex-direction:column; gap:16px; overflow-y:auto;">
+    <div class="card" style="flex-shrink:0;">
+      <div class="card-header">
+        <span class="card-title">Connections</span>
+        <span class="text-xs text-muted" id="map-updated">–</span>
+      </div>
+      <div class="card-body" style="padding:0;">
+        <div id="peer-list" style="display:flex; flex-direction:column;"></div>
+        <div id="peer-empty" class="empty-state" style="display:none; padding:32px 20px;">
+          <div class="empty-state-icon">🌍</div>
+          <div class="empty-state-text">No peers yet.<br>Peers appear here after first handshake.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="flex-shrink:0;">
+      <div class="card-header"><span class="card-title">Legend</span></div>
+      <div class="card-body" style="display:flex; flex-direction:column; gap:10px;">
+        <div style="display:flex; align-items:center; gap:10px; font-size:0.82rem;">
+          <div style="width:12px;height:12px;border-radius:50%;background:#f59e0b;box-shadow:0 0 6px #f59e0b;flex-shrink:0;"></div>
+          <span class="text-muted">VPS Server</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; font-size:0.82rem;">
+          <div style="width:12px;height:12px;border-radius:50%;background:var(--success);box-shadow:0 0 6px var(--success);flex-shrink:0;"></div>
+          <span class="text-muted">Active — handshake &lt; 3 min</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; font-size:0.82rem;">
+          <div style="width:12px;height:12px;border-radius:50%;background:var(--text-dim);flex-shrink:0;"></div>
+          <span class="text-muted">Inactive / no recent handshake</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; font-size:0.82rem;">
+          <div style="width:12px;height:12px;border-radius:50%;background:var(--text-dim);border:2px dashed var(--border);flex-shrink:0;"></div>
+          <span class="text-muted">No location data</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Summary table -->
+<div class="card mt-24">
+  <div class="card-header">
+    <span class="card-title">Peer Locations</span>
+    <span class="text-xs text-muted" id="table-updated">–</span>
+  </div>
+  <div class="table-wrap" style="border:none; border-radius:0;">
+    <table id="loc-table">
+      <thead>
+        <tr>
+          <th>Peer</th>
+          <th>Country</th>
+          <th>City</th>
+          <th>VPN IP</th>
+          <th>Real IP</th>
+          <th>Last Seen</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="loc-tbody">
+        <tr><td colspan="7" class="text-dim text-sm" style="padding:16px;">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/leaflet.min.css') }}">
+<script src="{{ url_for('static', filename='js/leaflet.min.js') }}"></script>
+<script>
+(function () {
+  // Fix default marker icon paths
+  delete L.Icon.Default.prototype._getIconUrl;
+  L.Icon.Default.mergeOptions({
+    iconUrl:       '{{ url_for("static", filename="img/marker-icon.png") }}',
+    iconRetinaUrl: '{{ url_for("static", filename="img/marker-icon-2x.png") }}',
+    shadowUrl:     '{{ url_for("static", filename="img/marker-shadow.png") }}',
+  });
+
+  const map = L.map('map', { zoomControl: true, scrollWheelZoom: true }).setView([20, 0], 3);
+
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/">CARTO</a>',
+    subdomains: 'abcd',
+    maxZoom: 19,
+  }).addTo(map);
+
+  // ── State ────────────────────────────────────────────────────────────────────
+  const peerMarkers = {};
+  let serverMarker  = null;
+  let serverLatLng  = null;
+  let serverInfo    = null;
+  let polylines     = [];
+  let lastPeers     = [];
+  let firstLoad     = true;
+
+  // ── Icons ─────────────────────────────────────────────────────────────────────
+  function serverIcon() {
+    return L.divIcon({
+      className: '',
+      html: '<div style="width:20px;height:20px;border-radius:50%;background:#f59e0b;box-shadow:0 0 12px #f59e0b;border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:10px;color:#1a1a2e;font-weight:900;">★</div>',
+      iconSize: [20, 20], iconAnchor: [10, 10],
+    });
+  }
+
+  function activeIcon() {
+    return L.divIcon({
+      className: '',
+      html: '<div style="width:16px;height:16px;border-radius:50%;background:#10b981;box-shadow:0 0 8px #10b981;border:2px solid #fff;"></div>',
+      iconSize: [16, 16], iconAnchor: [8, 8],
+    });
+  }
+
+  function inactiveIcon() {
+    return L.divIcon({
+      className: '',
+      html: '<div style="width:14px;height:14px;border-radius:50%;background:#5a6278;border:2px solid #8892a4;"></div>',
+      iconSize: [14, 14], iconAnchor: [7, 7],
+    });
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────────
+  function countryFlag(cc) {
+    if (!cc || cc.length !== 2) return '';
+    try {
+      return String.fromCodePoint(
+        0x1F1E0 + cc.toUpperCase().charCodeAt(0) - 65,
+        0x1F1E0 + cc.toUpperCase().charCodeAt(1) - 65
+      );
+    } catch(e) { return ''; }
+  }
+
+  // ── Polylines ─────────────────────────────────────────────────────────────────
+  function redrawPolylines() {
+    polylines.forEach(l => map.removeLayer(l));
+    polylines = [];
+    if (!serverLatLng) return;
+    lastPeers.forEach(p => {
+      if (p.active && p.lat !== null && p.lon !== null) {
+        polylines.push(
+          L.polyline([serverLatLng, [p.lat, p.lon]], {
+            color: '#10b981', weight: 1.5, opacity: 0.45, dashArray: '5, 5',
+          }).addTo(map)
+        );
+      }
+    });
+  }
+
+  // ── Popups ────────────────────────────────────────────────────────────────────
+  function buildServerPopup(s) {
+    const flag = countryFlag(s.country_code);
+    const loc  = s.city ? `${flag} ${s.city}, ${s.country}` : (s.country || '');
+    return `<div style="font-family:Inter,sans-serif;font-size:13px;min-width:180px;">
+      <div style="font-weight:700;font-size:14px;margin-bottom:6px;">★ VPS Server</div>
+      <div style="color:#aaa;margin-bottom:2px;">Endpoint: <b style="color:#e2e8f0">${s.endpoint}</b></div>
+      ${s.ip && s.ip !== s.endpoint ? `<div style="color:#aaa;margin-bottom:2px;">IP: <b style="color:#e2e8f0">${s.ip}</b></div>` : ''}
+      ${loc ? `<div style="color:#aaa;margin-bottom:2px;">Location: <b style="color:#e2e8f0">${loc}</b></div>` : ''}
+      <div style="margin-top:6px;">
+        <span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:rgba(245,158,11,0.15);color:#f59e0b;">
+          ${s.wg_running ? '● online' : '○ offline'}
+        </span>
+      </div>
+    </div>`;
+  }
+
+  function buildPeerPopup(p) {
+    const flag = countryFlag(p.country_code);
+    const loc  = p.city ? `${flag} ${p.city}, ${p.country}` : (p.country ? `${flag} ${p.country}` : '');
+    return `<div style="font-family:Inter,sans-serif;font-size:13px;min-width:180px;">
+      <div style="font-weight:700;font-size:14px;margin-bottom:6px;">${p.name}</div>
+      <div style="color:#aaa;margin-bottom:2px;">VPN IP: <b style="color:#e2e8f0">${p.vpn_ip}</b></div>
+      <div style="color:#aaa;margin-bottom:2px;">Real IP: <b style="color:#e2e8f0">${p.real_ip}</b></div>
+      ${loc ? `<div style="color:#aaa;margin-bottom:2px;">Location: <b style="color:#e2e8f0">${loc}</b></div>` : ''}
+      <div style="color:#aaa;margin-bottom:2px;">Last handshake: <b style="color:#e2e8f0">${p.last_handshake}</b></div>
+      <div style="color:#aaa;margin-bottom:2px;">RX: <b style="color:#3b82f6">${p.rx_fmt}</b> &nbsp;TX: <b style="color:#7c6af7">${p.tx_fmt}</b></div>
+      <div style="margin-top:6px;">
+        <span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;
+              background:${p.active ? 'rgba(16,185,129,0.15)' : 'rgba(90,98,120,0.2)'};
+              color:${p.active ? '#10b981' : '#8892a4'};">
+          ${p.active ? '● active' : '○ inactive'}
+        </span>
+      </div>
+    </div>`;
+  }
+
+  // ── Right-panel rows ──────────────────────────────────────────────────────────
+  function buildServerRow(s) {
+    const flag = countryFlag(s.country_code);
+    const loc  = s.city ? `${flag} ${s.city}, ${s.country}` : (s.country ? `${flag} ${s.country}` : 'Server');
+    return `<div class="server-row" style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);cursor:${s.lat !== null ? 'pointer' : 'default'};">
+      <div style="width:10px;height:10px;border-radius:50%;flex-shrink:0;background:#f59e0b;box-shadow:0 0 6px #f59e0b;"></div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:0.85rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#f59e0b;">★ VPS Server</div>
+        <div style="font-size:0.72rem;color:var(--text-muted);">${loc}</div>
+      </div>
+      <div style="font-family:var(--mono);font-size:0.72rem;color:var(--text-dim);">${s.wg_running ? '<span style="color:#10b981;">●</span>' : '<span style="color:#ef4444;">○</span>'}</div>
+    </div>`;
+  }
+
+  function buildPeerRow(p) {
+    const hasLoc = p.lat !== null && p.lon !== null;
+    const flag   = countryFlag(p.country_code);
+    const loc    = p.city  ? `${flag} ${p.city}, ${p.country}`
+                 : hasLoc  ? (p.country ? `${flag} ${p.country}` : 'Located')
+                 : p.real_ip !== 'unknown' ? 'No location data'
+                 : 'Never connected';
+    return `<div class="peer-row" data-name="${p.name}" style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);cursor:${hasLoc ? 'pointer' : 'default'};">
+      <div style="width:10px;height:10px;border-radius:50%;flex-shrink:0;
+           background:${p.active ? 'var(--success)' : 'var(--text-dim)'};
+           ${p.active ? 'box-shadow:0 0 5px var(--success);' : ''}"></div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:0.85rem;font-weight:550;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.name}</div>
+        <div style="font-size:0.72rem;color:var(--text-muted);">${loc}</div>
+      </div>
+      <div style="font-family:var(--mono);font-size:0.72rem;color:var(--text-dim);">${p.last_handshake !== 'Never' ? p.last_handshake : '—'}</div>
+    </div>`;
+  }
+
+  // ── Server location ───────────────────────────────────────────────────────────
+  function loadServer() {
+    fetch('/api/server-location')
+      .then(r => r.json())
+      .then(s => {
+        serverInfo = s;
+        if (s.lat !== null && s.lon !== null) {
+          serverLatLng = [s.lat, s.lon];
+          if (!serverMarker) {
+            serverMarker = L.marker(serverLatLng, { icon: serverIcon(), zIndexOffset: 1000 })
+              .bindPopup(buildServerPopup(s))
+              .addTo(map);
+            map.setView(serverLatLng, 3);
+          } else {
+            serverMarker.setPopupContent(buildServerPopup(s));
+          }
+          redrawPolylines();
+        }
+        // Re-render panel so server row appears
+        renderPanel();
+      })
+      .catch(() => {});
+  }
+
+  function renderPanel() {
+    const list  = document.getElementById('peer-list');
+    const empty = document.getElementById('peer-empty');
+    const serverRow = serverInfo ? buildServerRow(serverInfo) : '';
+    list.innerHTML = serverRow + lastPeers.map(buildPeerRow).join('');
+    empty.style.display = (lastPeers.length === 0 && !serverInfo) ? 'flex' : 'none';
+
+    // Server row click
+    const sr = list.querySelector('.server-row');
+    if (sr && serverMarker) {
+      sr.addEventListener('click', () => {
+        map.flyTo(serverMarker.getLatLng(), 5, { duration: 1 });
+        serverMarker.openPopup();
+      });
+    }
+
+    // Peer row clicks
+    list.querySelectorAll('.peer-row[data-name]').forEach(row => {
+      row.addEventListener('click', () => {
+        const m = peerMarkers[row.dataset.name];
+        if (m) { map.flyTo(m.getLatLng(), 6, { duration: 1 }); m.openPopup(); }
+      });
+    });
+  }
+
+  // ── Peer refresh ─────────────────────────────────────────────────────────────
+  function refresh() {
+    fetch('/api/peer-locations')
+      .then(r => r.json())
+      .then(peers => {
+        lastPeers = peers;
+        document.getElementById('map-loader').style.display = 'none';
+        document.getElementById('map-updated').textContent =
+          'Updated ' + new Date().toLocaleTimeString([], { hour12: false });
+
+        const withLoc = peers.filter(p => p.lat !== null && p.lon !== null);
+
+        // Update / add peer markers
+        const seen = new Set();
+        withLoc.forEach(p => {
+          seen.add(p.name);
+          const icon = p.active ? activeIcon() : inactiveIcon();
+          if (peerMarkers[p.name]) {
+            peerMarkers[p.name].setLatLng([p.lat, p.lon]).setIcon(icon).setPopupContent(buildPeerPopup(p));
+          } else {
+            peerMarkers[p.name] = L.marker([p.lat, p.lon], { icon })
+              .bindPopup(buildPeerPopup(p))
+              .addTo(map);
+          }
+        });
+
+        // Remove stale markers
+        Object.keys(peerMarkers).forEach(name => {
+          if (!seen.has(name)) { map.removeLayer(peerMarkers[name]); delete peerMarkers[name]; }
+        });
+
+        redrawPolylines();
+        renderPanel();
+
+        // Summary table
+        const tbody = document.getElementById('loc-tbody');
+        const tableUpdated = document.getElementById('table-updated');
+        if (tableUpdated) tableUpdated.textContent = 'Updated ' + new Date().toLocaleTimeString([], {hour12:false});
+        if (tbody) {
+          if (peers.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-dim text-sm" style="padding:16px;">No peers.</td></tr>';
+          } else {
+            tbody.innerHTML = peers.map(p => {
+              const flag = countryFlag(p.country_code);
+              return `<tr>
+                <td><a href="/peers/${p.peer_id}" style="color:var(--accent);text-decoration:none;font-weight:550;">${p.name}</a></td>
+                <td class="text-muted">${p.country ? flag + ' ' + p.country : '—'}</td>
+                <td class="text-muted">${p.city || '—'}</td>
+                <td class="td-mono">${p.vpn_ip}</td>
+                <td class="td-mono text-dim">${p.real_ip !== 'unknown' ? p.real_ip : '—'}</td>
+                <td class="text-sm text-muted">${p.last_handshake}</td>
+                <td>${p.active
+                  ? '<span class="badge badge-success">● active</span>'
+                  : (p.enabled
+                      ? '<span class="badge badge-muted">○ inactive</span>'
+                      : '<span class="badge badge-muted">disabled</span>')
+                }</td>
+              </tr>`;
+            }).join('');
+          }
+        }
+
+        // Fit map to all markers on first load (if multiple peers have locations)
+        if (firstLoad && withLoc.length > 1) {
+          firstLoad = false;
+          const allMarkers = [...Object.values(peerMarkers)];
+          if (serverMarker) allMarkers.push(serverMarker);
+          if (allMarkers.length > 1) {
+            const group = L.featureGroup(allMarkers);
+            map.fitBounds(group.getBounds().pad(0.25));
+          }
+        } else {
+          firstLoad = false;
+        }
+      })
+      .catch(() => {
+        document.getElementById('map-loader').textContent = 'Could not load peer locations.';
+      });
+  }
+
+  loadServer();
+  refresh();
+  setInterval(refresh, 30000);
+})();
+</script>
+{% endblock %}

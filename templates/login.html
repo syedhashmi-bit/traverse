@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In — Traverse</title>
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+  <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: var(--bg);
+    }
+
+    .login-wrap {
+      width: 100%;
+      max-width: 380px;
+      padding: 20px;
+    }
+
+    .login-logo {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin-bottom: 32px;
+      text-decoration: none;
+    }
+
+    .login-logo img {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      object-fit: cover;
+    }
+
+    .login-logo-text {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.4px;
+    }
+
+    .login-logo-text span { color: var(--accent); }
+
+    .login-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 28px;
+    }
+
+    .login-heading {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+
+    .login-sub {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      margin-bottom: 24px;
+    }
+
+    .login-error {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      color: #fca5a5;
+      font-size: 0.875rem;
+      margin-bottom: 20px;
+    }
+
+    .login-footer {
+      margin-top: 20px;
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--text-dim);
+    }
+  </style>
+</head>
+<body>
+
+<div class="login-wrap">
+
+  <a href="/login" class="login-logo">
+    <img src="/static/img/app.png" alt="traverse logo">
+    <span class="login-logo-text">tra<span>verse</span></span>
+  </a>
+
+  <div class="login-card">
+    <div class="login-heading">Sign in</div>
+    <div class="login-sub">VPN Dashboard — authorized access only.</div>
+
+    {% if error %}
+    <div class="login-error">
+      <span>✕</span> {{ error }}
+    </div>
+    {% endif %}
+
+    <form method="POST" action="/login" autocomplete="off">
+      <input type="hidden" name="next" value="{{ next_url }}">
+
+      <div class="form-group">
+        <label class="form-label" for="username">Username</label>
+        <input class="form-input" type="text" id="username" name="username"
+               autocomplete="username" required autofocus spellcheck="false">
+      </div>
+
+      <div class="form-group" style="margin-bottom: 24px;">
+        <label class="form-label" for="password">Password</label>
+        <input class="form-input" type="password" id="password" name="password"
+               autocomplete="current-password" required>
+      </div>
+
+      <button type="submit" class="btn btn-primary w-full btn-lg">
+        Sign In
+      </button>
+    </form>
+  </div>
+
+  <div class="login-footer">
+    traverse · WireGuard VPN Dashboard
+  </div>
+
+</div>
+
+</body>
+</html>

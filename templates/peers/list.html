@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+{% block title %}Peers{% endblock %}
+{% block page_title %}Peers{% endblock %}
+
+{% block content %}
+<div class="section-header">
+  <div>
+    <div class="section-title">All Peers</div>
+    <div class="section-sub">{{ peers|length }} registered client{{ 's' if peers|length != 1 }}</div>
+  </div>
+  <a href="{{ url_for('peers.create') }}" class="btn btn-primary">+ Add Peer</a>
+</div>
+
+{% if peers %}
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Name</th>
+        <th>Device</th>
+        <th>VPN IP</th>
+        <th>DNS</th>
+        <th>Status</th>
+        <th>Last Handshake</th>
+        <th>RX / TX</th>
+        <th>Expires</th>
+        <th>Created</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for peer in peers %}
+      <tr>
+        <td class="td-mono text-dim">{{ peer.id }}</td>
+        <td>
+          <a href="{{ url_for('peers.detail', peer_id=peer.id) }}"
+             style="color:var(--accent); text-decoration:none; font-weight:550;">
+            {{ peer.name }}
+          </a>
+          {% if peer.notes %}
+          <span title="{{ peer.notes }}" style="margin-left:5px; color:var(--text-dim); cursor:default; font-size:0.8rem;">✎</span>
+          {% endif %}
+          {% if peer.is_expired %}
+          <span class="badge badge-warning" style="margin-left:5px; font-size:0.6rem; vertical-align:middle;">EXPIRED</span>
+          {% endif %}
+        </td>
+        <td>
+          {% set icons = {'phone': '📱', 'laptop': '💻', 'desktop': '🖥', 'tablet': '📋', 'router': '🌐', 'other': '◈'} %}
+          <span class="device-badge">{{ icons.get(peer.device or 'other', '◈') }} {{ (peer.device or 'other')|capitalize }}</span>
+        </td>
+        <td class="td-mono">{{ peer.vpn_ip }}</td>
+        <td class="td-mono text-dim">{{ peer.dns }}</td>
+        <td>
+          {% if peer.enabled %}
+            <span class="badge badge-success">● on</span>
+          {% else %}
+            <span class="badge badge-muted">○ off</span>
+          {% endif %}
+        </td>
+        <td class="text-sm text-muted">{{ peer.last_handshake }}</td>
+        <td class="td-mono text-xs">
+          ↓ {{ peer.rx_fmt }}<br>↑ {{ peer.tx_fmt }}
+        </td>
+        <td class="text-xs {% if peer.is_expired %}text-warning{% else %}text-dim{% endif %}">
+          {{ peer.expires_at or '—' }}
+        </td>
+        <td class="text-xs text-dim">{{ peer.created_at[:10] }}</td>
+        <td>
+          <div class="action-bar">
+            <a href="{{ url_for('peers.detail', peer_id=peer.id) }}"
+               class="btn btn-secondary btn-sm">View</a>
+            <a href="{{ url_for('peers.qr_page', peer_id=peer.id) }}"
+               class="btn btn-secondary btn-sm" title="QR Code">QR</a>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card">
+  <div class="empty-state">
+    <div class="empty-state-icon">◈</div>
+    <div class="empty-state-text">
+      No peers yet.<br>
+      <a href="{{ url_for('peers.create') }}" style="color:var(--accent);">
+        Create your first VPN peer
+      </a>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

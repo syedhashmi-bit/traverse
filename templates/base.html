@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Traverse{% endblock %} — VPN Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}">
+</head>
+<body class="{% block body_class %}{% endblock %}">
+
+<div id="sidebar-overlay" class="sidebar-overlay"></div>
+
+<!-- ── Sidebar: icon rail ─────────────────────────────────────────────── -->
+<aside class="sidebar">
+  <a href="{{ url_for('dashboard.index') }}" class="sidebar-logo" data-tooltip="Traverse">
+    <img src="{{ url_for('static', filename='img/app.png') }}" alt="T"
+         style="height:26px; width:26px; border-radius:5px; object-fit:cover;">
+  </a>
+
+  <nav class="sidebar-nav">
+    <a href="{{ url_for('dashboard.index') }}"
+       class="nav-link {% if request.endpoint == 'dashboard.index' %}active{% endif %}"
+       data-tooltip="Dashboard">
+      <span class="icon">⬡</span>
+    </a>
+    <a href="{{ url_for('peers.list_peers') }}"
+       class="nav-link {% if request.blueprint == 'peers' and request.endpoint != 'peers.create' %}active{% endif %}"
+       data-tooltip="All Peers">
+      <span class="icon">◈</span>
+    </a>
+    <a href="{{ url_for('peers.create') }}"
+       class="nav-link {% if request.endpoint == 'peers.create' %}active{% endif %}"
+       data-tooltip="Add Peer">
+      <span class="icon">+</span>
+    </a>
+    <a href="{{ url_for('map.map_view') }}"
+       class="nav-link {% if request.blueprint == 'map' and request.endpoint == 'map.map_view' %}active{% endif %}"
+       data-tooltip="Connection Map">
+      <span class="icon">🌍</span>
+    </a>
+    <a href="{{ url_for('history.history_view') }}"
+       class="nav-link {% if request.blueprint == 'history' %}active{% endif %}"
+       data-tooltip="History">
+      <span class="icon">⧖</span>
+    </a>
+    <a href="{{ url_for('alerts.alerts_view') }}"
+       class="nav-link {% if request.blueprint == 'alerts' %}active{% endif %}"
+       data-tooltip="Alerts" style="position:relative;">
+      <span class="icon">⚑</span>
+      {% if unseen_alert_count > 0 %}
+      <span style="position:absolute;top:3px;right:3px;background:var(--danger);color:#fff;
+                   border-radius:50%;width:14px;height:14px;font-size:9px;font-weight:700;
+                   display:flex;align-items:center;justify-content:center;line-height:1;
+                   font-family:var(--font);">{{ unseen_alert_count if unseen_alert_count < 10 else '9+' }}</span>
+      {% endif %}
+    </a>
+    <a href="{{ url_for('settings.index') }}"
+       class="nav-link {% if request.blueprint == 'settings' %}active{% endif %}"
+       data-tooltip="Settings">
+      <span class="icon">⚙</span>
+    </a>
+  </nav>
+
+  <div class="sidebar-footer">
+    <div class="status-dot {% if wg_running %}up{% else %}down{% endif %}"
+         title="WireGuard {{ 'running' if wg_running else 'stopped' }}"></div>
+  </div>
+</aside>
+
+<!-- ── Main ──────────────────────────────────────────────────────────── -->
+<div class="main">
+  <header class="topbar">
+    <button id="hamburger" class="hamburger" aria-label="Open menu">&#9776;</button>
+    <span class="page-title">{% block page_title %}Traverse{% endblock %}</span>
+    <div class="topbar-right">
+      <a href="{{ url_for('peers.create') }}" class="btn btn-primary btn-sm">+ Add Peer</a>
+      <a href="{{ url_for('auth.logout') }}" class="btn btn-ghost btn-sm">Sign Out</a>
+    </div>
+  </header>
+
+  <div class="content">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="flash-list">
+      {% for category, message in messages %}
+      <div class="flash flash-{{ category }}">
+        {% if category == 'success' %}✓{% elif category == 'error' %}✕{% elif category == 'warning' %}⚠{% else %}ℹ{% endif %}
+        {{ message }}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </div>
+</div>
+
+<!-- ── Bottom nav (mobile only) ──────────────────────────────────────── -->
+<nav class="bottom-nav">
+  <a href="{{ url_for('dashboard.index') }}"
+     class="bottom-nav-item {% if request.endpoint == 'dashboard.index' %}active{% endif %}">
+    <span class="icon">⬡</span><span>Home</span>
+  </a>
+  <a href="{{ url_for('peers.list_peers') }}"
+     class="bottom-nav-item {% if request.blueprint == 'peers' %}active{% endif %}">
+    <span class="icon">◈</span><span>Peers</span>
+  </a>
+  <a href="{{ url_for('map.map_view') }}"
+     class="bottom-nav-item {% if request.blueprint == 'map' and request.endpoint == 'map.map_view' %}active{% endif %}">
+    <span class="icon">🌍</span><span>Map</span>
+  </a>
+  <a href="{{ url_for('alerts.alerts_view') }}"
+     class="bottom-nav-item {% if request.blueprint == 'alerts' %}active{% endif %}"
+     style="position:relative;">
+    <span class="icon">⚑</span>
+    {% if unseen_alert_count > 0 %}
+    <span style="position:absolute;top:4px;right:8px;background:var(--danger);color:#fff;
+                 border-radius:50%;width:14px;height:14px;font-size:9px;font-weight:700;
+                 display:flex;align-items:center;justify-content:center;line-height:1;">
+      {{ unseen_alert_count if unseen_alert_count < 10 else '9+' }}
+    </span>
+    {% endif %}
+    <span>Alerts</span>
+  </a>
+  <a href="{{ url_for('settings.index') }}"
+     class="bottom-nav-item {% if request.blueprint == 'settings' %}active{% endif %}">
+    <span class="icon">⚙</span><span>Settings</span>
+  </a>
+</nav>
+
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

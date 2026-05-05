@@ -1,0 +1,327 @@
+{% extends 'base.html' %}
+{% block title %}Settings{% endblock %}
+{% block page_title %}Settings{% endblock %}
+
+{% block content %}
+<div class="detail-grid">
+  <!-- Left: Interface status -->
+  <div style="display:flex; flex-direction:column; gap:20px;">
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">WireGuard Interface</span>
+        {% if wg_status.running %}
+          <span class="badge badge-success">● running</span>
+        {% else %}
+          <span class="badge badge-danger">○ stopped</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        <div class="detail-field">
+          <div class="detail-label">Interface</div>
+          <div class="detail-value mono">{{ interface }}</div>
+        </div>
+        <div class="detail-field">
+          <div class="detail-label">Subnet</div>
+          <div class="detail-value mono">{{ subnet }}</div>
+        </div>
+        <div class="detail-field">
+          <div class="detail-label">Server VPN IP</div>
+          <div class="detail-value mono">{{ server_ip }}</div>
+        </div>
+        <div class="detail-field">
+          <div class="detail-label">Listen Port</div>
+          <div class="detail-value mono">{{ wg_port }}/UDP</div>
+        </div>
+        <div class="detail-field">
+          <div class="detail-label">Endpoint</div>
+          <div class="detail-value mono">{{ endpoint }}</div>
+        </div>
+        <div class="detail-field">
+          <div class="detail-label">Default DNS</div>
+          <div class="detail-value mono">{{ dns }}</div>
+        </div>
+        {% if server_pub %}
+        <div class="detail-field">
+          <div class="detail-label">Server Public Key</div>
+          <div class="copy-block-wrap">
+            <div class="code-block code-wrap" id="server-pub">{{ server_pub }}</div>
+            <button class="copy-btn"
+                    onclick="copyText(document.getElementById('server-pub').textContent, this)">
+              Copy
+            </button>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Service control -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">Service Control</span></div>
+      <div class="card-body">
+        <div class="action-bar">
+          <form method="POST" action="{{ url_for('settings.restart_wg') }}">
+            <button class="btn btn-warning">↺ Restart</button>
+          </form>
+          <form method="POST" action="{{ url_for('settings.start_wg') }}">
+            <button class="btn btn-success">▶ Start</button>
+          </form>
+          <form method="POST" action="{{ url_for('settings.stop_wg') }}">
+            <button class="btn btn-danger">■ Stop</button>
+          </form>
+        </div>
+        <div class="mt-12 text-xs text-muted">
+          Uses <code style="color:var(--accent)">systemctl</code> to manage
+          <code style="color:var(--accent)">wg-quick@{{ interface }}</code>.
+          Requires traverse to run as root or with sudo privileges.
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Right: Config reference -->
+  <div style="display:flex; flex-direction:column; gap:20px;">
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Server Config Reference</span>
+        <span class="badge badge-muted">read-only</span>
+      </div>
+      <div class="card-body">
+        <div class="copy-block-wrap">
+          <pre class="code-block" id="srv-conf">{{ server_conf_snippet }}</pre>
+          <button class="copy-btn"
+                  onclick="copyText(document.getElementById('srv-conf').textContent, this)">
+            Copy
+          </button>
+        </div>
+        <div class="mt-8 text-xs text-muted">
+          This is a reference snippet. Edit
+          <code style="color:var(--accent)">/etc/wireguard/{{ interface }}.conf</code>
+          directly on the server. Peers are managed dynamically by traverse via
+          <code style="color:var(--accent)">wg set</code>.
+        </div>
+      </div>
+    </div>
+
+    {% if wg_status.output %}
+    <div class="card">
+      <div class="card-header"><span class="card-title">wg show output</span></div>
+      <div class="card-body">
+        <pre class="code-block" style="color:var(--text-muted);">{{ wg_status.output }}</pre>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- TOTP 2FA -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Two-Factor Auth (TOTP)</span>
+        {% if totp_configured %}
+          <span class="badge badge-success">● active</span>
+        {% else %}
+          <span class="badge badge-warning">○ not set</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        {% if totp_configured %}
+        <p class="text-sm text-muted" style="line-height:1.7;">
+          TOTP is enabled. Every login requires a 6-digit code after password verification.
+        </p>
+        <a href="{{ url_for('auth.totp_setup') }}" class="btn btn-secondary btn-sm mt-12">View Setup QR</a>
+        {% else %}
+        <p class="text-sm text-muted" style="line-height:1.7;">
+          TOTP is not configured. Add <code style="color:var(--accent)">TOTP_SECRET</code>
+          to <code style="color:var(--accent)">.env</code> and restart to enable 2FA.
+        </p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">Configuration</span></div>
+      <div class="card-body">
+        <p class="text-sm text-muted" style="line-height:1.8;">
+          All settings are loaded from
+          <code style="color:var(--accent)">.env</code>
+          in the project root. Edit that file and restart traverse to apply changes.
+        </p>
+        <div class="mt-12 code-block" style="color:var(--text-muted); font-size:0.78rem;">WG_INTERFACE={{ interface }}
+WG_PORT={{ wg_port }}
+WG_SUBNET={{ subnet }}
+WG_SERVER_VPN_IP={{ server_ip }}
+WG_ENDPOINT={{ endpoint }}
+WG_DNS={{ dns }}</div>
+      </div>
+    </div>
+
+    <!-- Backup & Restore -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">Backup &amp; Restore</span></div>
+      <div class="card-body">
+        <p class="text-sm text-muted" style="line-height:1.7; margin-bottom:16px;">
+          Export all peer records (no private keys), connection history, and alerts to a JSON file.
+          Import restores peers not already present. Clients will need config regenerated after import.
+        </p>
+        <div class="action-bar" style="flex-direction:column; align-items:flex-start; gap:16px;">
+          <a href="{{ url_for('settings.backup_export') }}" class="btn btn-secondary">↓ Export Backup</a>
+
+          <form id="import-form" method="POST"
+                action="{{ url_for('settings.backup_import') }}"
+                enctype="multipart/form-data" style="width:100%;">
+            <label class="form-label">Import from backup file</label>
+            <input type="file" name="backup_file" id="backup-file"
+                   accept=".json"
+                   style="display:block; margin-bottom:10px; color:var(--text-muted); font-size:0.85rem;">
+            <div id="backup-preview" style="display:none; background:var(--surface-2);
+                 border:1px solid var(--border); border-radius:var(--radius); padding:12px 16px;
+                 margin-bottom:12px; font-size:0.85rem;">
+              <div style="margin-bottom:6px; color:var(--text-muted);">
+                Backup from: <span id="bp-date" style="color:var(--text);"></span>
+              </div>
+              <div style="margin-bottom:10px; color:var(--text-muted);">
+                Peers: <span id="bp-count" style="color:var(--text); font-weight:600;"></span>
+              </div>
+              <button type="submit" class="btn btn-warning btn-sm">⚠ Confirm Import</button>
+            </div>
+            <div id="backup-hint" class="text-dim text-xs" style="margin-top:4px;">
+              Select a traverse-backup-*.json file to preview before importing.
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Speedtest -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Speedtest</span>
+        <span class="badge badge-muted">via speedtest-cli</span>
+      </div>
+      <div class="card-body">
+        <p class="text-sm text-muted" style="line-height:1.7; margin-bottom:14px;">
+          Run a server-side network speed test. Takes 15–30 seconds.
+        </p>
+        <button id="speedtest-btn" class="btn btn-secondary btn-sm">▶ Run Speedtest</button>
+        <div id="speedtest-status" style="display:none; margin-top:12px; font-size:0.85rem; color:var(--text-muted);">
+          Running…
+        </div>
+        <div id="speedtest-result" style="display:none; margin-top:12px; background:var(--surface-2);
+             border:1px solid var(--border); border-radius:var(--radius); padding:12px 16px; font-family:var(--mono); font-size:0.82rem;">
+        </div>
+
+        {% if speedtest_results %}
+        <div style="margin-top:20px;">
+          <div class="form-label" style="margin-bottom:8px;">Recent Results</div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>↓ Download</th>
+                  <th>↑ Upload</th>
+                  <th>Ping</th>
+                  <th>Server</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for r in speedtest_results %}
+                <tr>
+                  <td class="text-muted text-sm">{{ r.tested_at[:16] }} UTC</td>
+                  <td class="td-mono text-success">{{ '%.1f'|format(r.download_mbps) }} Mbps</td>
+                  <td class="td-mono" style="color:var(--accent);">{{ '%.1f'|format(r.upload_mbps) }} Mbps</td>
+                  <td class="td-mono text-muted">{{ '%.0f'|format(r.ping_ms) }} ms</td>
+                  <td class="text-muted text-sm">{{ r.server_name or '—' }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+/* ── Backup file preview ──────────────────────────────────── */
+document.getElementById('backup-file').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    try {
+      const data = JSON.parse(ev.target.result);
+      document.getElementById('bp-date').textContent  = data.exported_at ? data.exported_at.replace('T', ' ').replace('Z', '') + ' UTC' : 'unknown';
+      document.getElementById('bp-count').textContent = (data.peers || []).length;
+      document.getElementById('backup-preview').style.display = 'block';
+      document.getElementById('backup-hint').style.display    = 'none';
+    } catch(err) {
+      alert('Could not parse backup file — is it a valid traverse JSON backup?');
+      document.getElementById('backup-preview').style.display = 'none';
+    }
+  };
+  reader.readAsText(file);
+});
+
+/* ── Speedtest ───────────────────────────────────────────── */
+(function () {
+  const btn    = document.getElementById('speedtest-btn');
+  const status = document.getElementById('speedtest-status');
+  const result = document.getElementById('speedtest-result');
+  let poll;
+
+  btn.addEventListener('click', function() {
+    btn.disabled    = true;
+    btn.textContent = '⏳ Running…';
+    status.style.display = 'block';
+    status.textContent   = 'Test in progress — this takes 15–30 seconds…';
+    result.style.display = 'none';
+
+    fetch('/api/speedtest/run', { method: 'POST' })
+      .then(r => r.json())
+      .then(d => {
+        if (d.status === 'already_running') {
+          status.textContent = 'A test is already running, checking…';
+        }
+        poll = setInterval(checkStatus, 2000);
+      })
+      .catch(() => {
+        status.textContent = 'Failed to start speedtest.';
+        btn.disabled = false; btn.textContent = '▶ Run Speedtest';
+      });
+  });
+
+  function checkStatus() {
+    fetch('/api/speedtest/status')
+      .then(r => r.json())
+      .then(d => {
+        if (d.running) return;
+        clearInterval(poll);
+        btn.disabled = false; btn.textContent = '▶ Run Speedtest';
+        if (d.error) {
+          status.textContent = 'Error: ' + d.error;
+          return;
+        }
+        if (d.result) {
+          status.style.display = 'none';
+          const r = d.result;
+          result.style.display = 'block';
+          result.innerHTML =
+            '<span style="color:var(--success);">↓ ' + r.download + ' Mbps</span> &nbsp; ' +
+            '<span style="color:var(--accent);">↑ ' + r.upload + ' Mbps</span> &nbsp; ' +
+            '<span style="color:var(--text-muted);">Ping ' + r.ping + ' ms</span>' +
+            (r.server ? '<br><span style="color:var(--text-dim);font-size:0.78rem;">via ' + r.server + '</span>' : '') +
+            '<br><a href="" style="color:var(--accent);font-size:0.78rem;" onclick="location.reload()">Reload to see in history</a>';
+        }
+      })
+      .catch(() => {});
+  }
+})();
+</script>
+{% endblock %}

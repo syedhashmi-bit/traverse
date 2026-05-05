@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block title %}QR — {{ peer.name }}{% endblock %}
+{% block page_title %}QR Code — {{ peer.name }}{% endblock %}
+
+{% block content %}
+<div style="max-width:420px; margin:0 auto;">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">{{ peer.name }}</span>
+      <span class="badge badge-accent">{{ peer.vpn_ip }}</span>
+    </div>
+
+    <div class="qr-wrapper">
+      <img src="{{ url_for('peers.qr_image', peer_id=peer.id) }}"
+           alt="WireGuard QR Code for {{ peer.name }}"
+           width="280" height="280"
+           style="image-rendering:pixelated;">
+      <p class="text-sm text-muted" style="text-align:center; line-height:1.6;">
+        Scan with the WireGuard mobile app.<br>
+        This embeds the full client config including the private key.
+      </p>
+    </div>
+
+    <div class="card-body" style="border-top:1px solid var(--border);">
+      <div class="action-bar" style="justify-content:center;">
+        <a href="{{ url_for('peers.download_config', peer_id=peer.id) }}"
+           class="btn btn-secondary">↓ Download .conf</a>
+        <a href="{{ url_for('peers.detail', peer_id=peer.id) }}"
+           class="btn btn-secondary">← Back to Peer</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-16 text-xs text-muted" style="text-align:center;">
+    ⚠ This QR contains the private key — share only with the intended device.
+  </div>
+</div>
+{% endblock %}

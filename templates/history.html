@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+{% block title %}Connection History{% endblock %}
+{% block page_title %}Connection History{% endblock %}
+
+{% block content %}
+<div class="section-header">
+  <div>
+    <div class="section-title">Connection History</div>
+    <div class="section-sub">Last 200 connect/disconnect events, newest first</div>
+  </div>
+</div>
+
+{% if events %}
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Event</th>
+        <th>Peer</th>
+        <th>VPN IP</th>
+        <th>Time (UTC)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for ev in events %}
+      <tr>
+        <td>
+          {% if ev.event_type == 'connected' %}
+            <span class="badge badge-success">● connected</span>
+          {% else %}
+            <span class="badge badge-muted">○ disconnected</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if ev.peer_id %}
+            <a href="{{ url_for('peers.detail', peer_id=ev.peer_id) }}"
+               style="color:var(--accent); text-decoration:none; font-weight:550;">
+              {{ ev.peer_name }}
+            </a>
+          {% else %}
+            <span class="text-dim">{{ ev.peer_name }}</span>
+          {% endif %}
+        </td>
+        <td class="td-mono">{{ ev.peer_vpn_ip }}</td>
+        <td class="text-sm text-muted">{{ ev.timestamp[:19] }} UTC</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card">
+  <div class="empty-state">
+    <div class="empty-state-icon">◈</div>
+    <div class="empty-state-text">
+      No connection events yet.<br>
+      <span class="text-dim text-sm">Events are recorded as peers connect and disconnect.</span>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

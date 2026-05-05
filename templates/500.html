@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% block title %}500 — Server Error{% endblock %}
+{% block page_title %}Server Error{% endblock %}
+{% block content %}
+<div class="empty-state" style="margin-top:60px;">
+  <div style="font-size:3rem; opacity:0.3;">500</div>
+  <div class="empty-state-text">Something went wrong. Check the logs.</div>
+  <a href="{{ url_for('dashboard.index') }}" class="btn btn-primary mt-16">← Back to Dashboard</a>
+</div>
+{% endblock %}

@@ -1,0 +1,102 @@
+{% extends 'base.html' %}
+{% block title %}Add Peer{% endblock %}
+{% block page_title %}Add Peer{% endblock %}
+
+{% block content %}
+<div class="max-w-lg">
+  <div class="section-header mb-16">
+    <div>
+      <div class="section-title">New Peer</div>
+      <div class="section-sub">
+        Keys are generated automatically. Config will use full-tunnel routing (0.0.0.0/0).
+      </div>
+      <div class="text-xs" style="margin-top:6px; color: {% if current_count >= max_peers %}var(--danger){% elif current_count >= max_peers - 5 %}var(--warning){% else %}var(--text-dim){% endif %};">
+        {{ current_count }} / {{ max_peers }} peers used
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-body">
+      <form method="POST" action="{{ url_for('peers.create') }}">
+
+        <div class="form-group">
+          <label class="form-label" for="name">Peer Name</label>
+          <input class="form-input" type="text" id="name" name="name"
+                 placeholder="e.g. nauman-phone, laptop-home"
+                 pattern="[a-zA-Z0-9_\-]{1,64}"
+                 required autofocus>
+          <div class="form-hint">1–64 chars: letters, numbers, dash, underscore.</div>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label" for="dns">DNS Server</label>
+            <input class="form-input" type="text" id="dns" name="dns"
+                   value="{{ dns }}" placeholder="1.1.1.1">
+            <div class="form-hint">Pushed to client config.</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">VPN IP (auto)</label>
+            <input class="form-input" type="text"
+                   value="{{ next_ip }}" disabled
+                   style="opacity:0.6; cursor:not-allowed;">
+            <div class="form-hint">Next available address.</div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="endpoint">Server Endpoint</label>
+          <input class="form-input" type="text" id="endpoint" name="endpoint"
+                 value="{{ endpoint }}" placeholder="203.0.113.1">
+          <div class="form-hint">VPS public IP or domain clients will connect to.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="device">Device Type</label>
+          <select class="form-select" id="device" name="device">
+            <option value="phone">📱 Phone</option>
+            <option value="laptop">💻 Laptop</option>
+            <option value="desktop">🖥 Desktop</option>
+            <option value="tablet">📋 Tablet</option>
+            <option value="router">🌐 Router</option>
+            <option value="other" selected>◈ Other</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="expires_at">Expires On <span class="text-dim">(optional)</span></label>
+          <input class="form-input" type="date" id="expires_at" name="expires_at">
+          <div class="form-hint">Leave blank for no expiry. Peer will be auto-disabled on this date.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="notes">Notes <span class="text-dim">(optional)</span></label>
+          <textarea class="form-textarea" id="notes" name="notes" rows="2"
+                    placeholder="e.g. iPhone 15, home office laptop…"></textarea>
+        </div>
+
+        <hr class="divider">
+
+        <div class="action-bar">
+          <button type="submit" class="btn btn-primary btn-lg">Generate &amp; Create Peer</button>
+          <a href="{{ url_for('peers.list_peers') }}" class="btn btn-secondary">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="mt-16 card">
+    <div class="card-header">
+      <span class="card-title">What happens next</span>
+    </div>
+    <div class="card-body text-sm text-muted" style="line-height:2;">
+      1. Private/public/preshared keys are generated via <code style="color:var(--accent)">wg genkey</code><br>
+      2. Next available IP in <strong>{{ next_ip.rsplit('.', 1)[0] }}.0/24</strong> is assigned<br>
+      3. Peer is saved to the database<br>
+      4. Peer is added live to the <code style="color:var(--accent)">wg0</code> interface<br>
+      5. You can download the <code style="color:var(--accent)">.conf</code> or scan the QR code
+    </div>
+  </div>
+</div>
+{% endblock %}

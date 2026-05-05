@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+{% block title %}Alerts{% endblock %}
+{% block page_title %}Alerts{% endblock %}
+
+{% block content %}
+<div class="section-header">
+  <div>
+    <div class="section-title">Alerts</div>
+    <div class="section-sub">
+      System notifications — {{ alerts|selectattr('seen','equalto',0)|list|length }} unseen
+    </div>
+  </div>
+  <form method="POST" action="{{ url_for('alerts.mark_seen') }}">
+    <button type="submit" class="btn btn-secondary">✓ Mark all seen</button>
+  </form>
+</div>
+
+{% if alerts %}
+<div style="display:flex; flex-direction:column; gap:8px;">
+  {% for alert in alerts %}
+  {% set colors = {
+    'critical': ('var(--danger)',  'rgba(239,68,68,0.08)',  'rgba(239,68,68,0.25)'),
+    'warning':  ('var(--warning)', 'rgba(245,158,11,0.08)', 'rgba(245,158,11,0.25)'),
+    'info':     ('var(--info)',    'rgba(59,130,246,0.08)', 'rgba(59,130,246,0.25)'),
+  } %}
+  {% set col, bg, border = colors.get(alert.severity, colors['info']) %}
+  <div style="display:flex; align-items:flex-start; gap:14px; padding:14px 16px;
+              background:{{ bg }}; border:1px solid {{ border }}; border-left:3px solid {{ col }};
+              border-radius:var(--radius); opacity:{{ '1' if not alert.seen else '0.55' }};">
+    <div style="flex:1; min-width:0;">
+      <div style="font-size:0.875rem; font-weight:{% if not alert.seen %}600{% else %}400{% endif %};
+                  color:{% if not alert.seen %}var(--text){% else %}var(--text-muted){% endif %};">
+        {{ alert.message }}
+      </div>
+      <div style="margin-top:4px; font-size:0.75rem; color:var(--text-dim); display:flex; gap:12px; flex-wrap:wrap;">
+        <span style="color:{{ col }}; font-weight:600; text-transform:uppercase; font-size:0.65rem; letter-spacing:0.06em;">
+          {{ alert.severity }}
+        </span>
+        {% if alert.peer_name %}
+        <span>
+          <a href="{{ url_for('peers.detail', peer_id=alert.peer_id) }}"
+             style="color:var(--accent); text-decoration:none;">{{ alert.peer_name }}</a>
+        </span>
+        {% endif %}
+        <span>{{ alert.created_at[:19] }} UTC</span>
+        {% if alert.seen %}<span>· seen</span>{% endif %}
+      </div>
+    </div>
+    {% if not alert.seen %}
+    <form method="POST" action="{{ url_for('alerts.dismiss', alert_id=alert.id) }}" style="flex-shrink:0;">
+      <button type="submit" class="btn btn-ghost btn-sm" title="Dismiss" style="padding:4px 9px; font-size:0.75rem;">✕</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card">
+  <div class="empty-state">
+    <div class="empty-state-icon">⚑</div>
+    <div class="empty-state-text">No alerts yet.<br>
+      <span class="text-dim text-sm">Alerts appear here when peers go inactive, expire, or WireGuard goes down.</span>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

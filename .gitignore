@@ -1,0 +1,36 @@
+# Secrets — never commit
+.env
+database.db
+
+# AI tooling / local dev artifacts
+.claude/
+CLAUDE.md
+context.md
+memory.md
+Prompt-Text.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# WireGuard keys (if ever generated locally)
+*.key

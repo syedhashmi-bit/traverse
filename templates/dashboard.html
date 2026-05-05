@@ -1,0 +1,425 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+{% block body_class %}noc{% endblock %}
+
+{% block content %}
+
+<!-- ── NOC Status Bar ─────────────────────────────────────────────────── -->
+<div class="noc-bar">
+  <div class="noc-stat">
+    <span class="noc-lbl">PEERS</span>
+    <span class="noc-val" id="lv-total">{{ total_peers }}</span>
+  </div>
+  <span class="noc-sep">│</span>
+  <div class="noc-stat">
+    <span class="noc-lbl">ACTIVE</span>
+    <span class="noc-val green" id="lv-active">{{ active_peers }}</span>
+  </div>
+  <span class="noc-sep">│</span>
+  <div class="noc-stat">
+    <span class="noc-lbl">↓ RX</span>
+    <span class="noc-val blue" id="lv-rx">{{ total_rx }}</span>
+  </div>
+  <span class="noc-sep">│</span>
+  <div class="noc-stat">
+    <span class="noc-lbl">↑ TX</span>
+    <span class="noc-val accent" id="lv-tx">{{ total_tx }}</span>
+  </div>
+  <span class="noc-sep">│</span>
+  <div class="noc-stat">
+    <span class="noc-lbl">SUBNET</span>
+    <span class="noc-val">{{ subnet }}</span>
+  </div>
+  <span class="noc-sep">│</span>
+  <div class="noc-stat">
+    <span class="noc-lbl">WG</span>
+    <span class="noc-val" id="lv-wg"
+          style="color:{% if wg_running %}var(--success){% else %}var(--danger){% endif %}">
+      {{ '● RUN' if wg_running else '○ DOWN' }}
+    </span>
+  </div>
+  {% if expired_peers > 0 %}
+  <span class="noc-sep">│</span>
+  <div class="noc-stat">
+    <span class="noc-lbl">EXPIRED</span>
+    <span class="noc-val" style="color:var(--warning);">{{ expired_peers }}</span>
+  </div>
+  {% endif %}
+  <!-- right: live speeds + indicator -->
+  <div class="noc-bar-right">
+    <span class="noc-speed-val" id="rx-rate-num" style="color:var(--info);">– B/s</span>
+    <span class="noc-sep-sm">↓</span>
+    <span class="noc-speed-val" id="tx-rate-num" style="color:var(--accent);">– B/s</span>
+    <span class="noc-sep-sm">↑</span>
+    <span id="ago-counter" class="noc-ago"></span>
+    <span class="live-badge" id="live-badge">
+      <span class="live-dot" id="live-dot"></span>LIVE
+    </span>
+  </div>
+</div>
+
+<!-- ── Server Health Bar ──────────────────────────────────────────────── -->
+<div class="noc-health-bar" id="health-bar">
+  <div class="noc-stat">
+    <span class="noc-lbl">CPU</span>
+    <span class="noc-val" id="hv-cpu">—</span>
+  </div>
+  <span class="noc-sep">│</span>
+  <div class="noc-stat">
+    <span class="noc-lbl">RAM</span>
+    <span class="noc-val" id="hv-ram">—</span>
+  </div>
+  <span class="noc-sep">│</span>
+  <div class="noc-stat">
+    <span class="noc-lbl">DISK</span>
+    <span class="noc-val" id="hv-disk">—</span>
+  </div>
+  <span class="noc-sep">│</span>
+  <div class="noc-stat">
+    <span class="noc-lbl">WG UPTIME</span>
+    <span class="noc-val" id="hv-wgup">—</span>
+  </div>
+  <div class="noc-bar-right">
+    <span class="noc-lbl dim">VPS SPEED</span>
+    <span class="noc-speed-val" id="hv-speed" style="color:var(--text-muted);">—</span>
+  </div>
+</div>
+
+<!-- ── NOC Grid ───────────────────────────────────────────────────────── -->
+<div class="noc-layout">
+  <div class="noc-grid">
+
+    <!-- LEFT: chart + peers table -->
+    <div class="noc-col">
+
+      <!-- Traffic chart -->
+      <div class="noc-panel">
+        <div class="noc-panel-hdr">
+          <span class="noc-panel-title">LIVE TRAFFIC — 15 MIN</span>
+          <span class="noc-panel-sub">↓ <span id="rx-total-display">–</span></span>
+          <span class="noc-sep-sm">/</span>
+          <span class="noc-panel-sub">↑ <span id="tx-total-display">–</span></span>
+        </div>
+        <div style="height:185px; padding:8px 12px 6px;">
+          <canvas id="traffic-chart"></canvas>
+        </div>
+      </div>
+
+      <!-- Peers table -->
+      <div class="noc-panel noc-panel-flex">
+        <div class="noc-panel-hdr">
+          <span class="noc-panel-title">PEERS ({{ total_peers }}/50)</span>
+          <a href="{{ url_for('peers.list_peers') }}" class="noc-action-btn">ALL</a>
+          <a href="{{ url_for('peers.create') }}" class="noc-action-btn">+ NEW</a>
+        </div>
+        <div class="noc-table-wrap">
+          {% if peers %}
+          <table class="noc-table">
+            <thead>
+              <tr>
+                <th style="width:18px;"></th>
+                <th>NAME</th>
+                <th class="hide-mobile">VPN IP</th>
+                <th class="hide-mobile">DEV</th>
+                <th class="hide-mobile">HS</th>
+                <th>RX / TX</th>
+                <th style="width:22px;"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for peer in peers %}
+              <tr data-vpn="{{ peer.vpn_ip }}" data-id="{{ peer.id }}">
+                <td class="noc-status-cell">
+                  <span class="noc-dot {{ 'noc-dot-green' if peer.enabled else 'noc-dot-dim' }}"
+                        id="dot-{{ peer.id }}"></span>
+                </td>
+                <td>
+                  <a href="{{ url_for('peers.detail', peer_id=peer.id) }}" class="noc-link">{{ peer.name }}</a>
+                </td>
+                <td class="mono dim hide-mobile">{{ peer.vpn_ip }}</td>
+                <td class="dim hide-mobile">
+                  {% set icons = {'phone':'📱','laptop':'💻','desktop':'🖥','tablet':'📋','router':'🌐','other':'◈'} %}
+                  {{ icons.get(peer.device or 'other', '◈') }}
+                </td>
+                <td class="mono dim hide-mobile" id="hs-{{ peer.id }}">{{ peer.last_handshake_short }}</td>
+                <td class="mono" style="white-space:nowrap;">
+                  <span class="noc-rx" id="rx-{{ peer.id }}">↓ {{ format_bytes(peer.rx_bytes or 0) }}</span>
+                  <span class="noc-tx" id="tx-{{ peer.id }}"> ↑ {{ format_bytes(peer.tx_bytes or 0) }}</span>
+                </td>
+                <td>
+                  <a href="{{ url_for('peers.detail', peer_id=peer.id) }}" class="noc-view-btn" title="View">›</a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+          <div class="noc-empty">No peers — <a href="{{ url_for('peers.create') }}" class="noc-link">add one</a></div>
+          {% endif %}
+        </div>
+      </div>
+
+    </div><!-- /noc-col left -->
+
+    <!-- RIGHT: interface info + wg output + quick nav -->
+    <div class="noc-col noc-col-right">
+
+      <!-- Interface info -->
+      <div class="noc-panel">
+        <div class="noc-panel-hdr">
+          <span class="noc-panel-title">INTERFACE</span>
+          {% if wg_status.running %}
+            <span class="noc-badge noc-badge-green">● UP</span>
+          {% else %}
+            <span class="noc-badge noc-badge-red">○ DOWN</span>
+          {% endif %}
+        </div>
+        <div class="noc-kv-grid">
+          <span class="noc-k">Interface</span><span class="noc-v">{{ 'wg0' }}</span>
+          <span class="noc-k">Endpoint</span><span class="noc-v">{{ endpoint }}:{{ wg_port }}</span>
+          <span class="noc-k">Subnet</span><span class="noc-v">{{ subnet }}</span>
+          <span class="noc-k">Server IP</span><span class="noc-v">{{ subnet.split('/')[0].rsplit('.', 1)[0] }}.1</span>
+          <span class="noc-k">Port</span><span class="noc-v">{{ wg_port }}/UDP</span>
+        </div>
+      </div>
+
+      <!-- WG raw output -->
+      {% if wg_status.output %}
+      <div class="noc-panel noc-panel-flex" style="max-height:220px; flex-shrink:0;">
+        <div class="noc-panel-hdr"><span class="noc-panel-title">WG SHOW</span></div>
+        <div class="noc-pre-wrap">
+          <pre class="noc-pre">{{ wg_status.output }}</pre>
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Quick nav -->
+      <div class="noc-panel">
+        <div class="noc-panel-hdr"><span class="noc-panel-title">QUICK NAV</span></div>
+        <div class="noc-quicknav">
+          <a href="{{ url_for('peers.list_peers') }}" class="noc-qbtn">◈ Peers</a>
+          <a href="{{ url_for('peers.create') }}"    class="noc-qbtn">+ Add Peer</a>
+          <a href="{{ url_for('map.map_view') }}"    class="noc-qbtn">🌍 Map</a>
+          <a href="{{ url_for('settings.index') }}"  class="noc-qbtn">⚙ Settings</a>
+        </div>
+      </div>
+
+    </div><!-- /noc-col right -->
+
+  </div><!-- /noc-grid -->
+</div><!-- /noc-layout -->
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/chart.min.js') }}"></script>
+<script>
+(function () {
+  const INTERVAL = 1000;
+
+  /* ── Formatters ──────────────────────────────────────────── */
+  function fmtRate(b) {
+    if (b < 1)        return '0 B/s';
+    if (b < 1024)     return b.toFixed(0)         + ' B/s';
+    if (b < 1048576)  return (b/1024).toFixed(1)  + ' KB/s';
+    return (b/1048576).toFixed(2) + ' MB/s';
+  }
+  function fmtTime(ts) {
+    return new Date(ts*1000).toLocaleTimeString([],{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  }
+  function relTime(ts) {
+    if (!ts) return 'Never';
+    const age = Math.floor(Date.now()/1000 - ts);
+    if (age < 0)     return 'now';
+    if (age < 60)    return age + 's';
+    if (age < 3600)  return Math.floor(age/60) + 'm';
+    if (age < 86400) return Math.floor(age/3600) + 'h';
+    return Math.floor(age/86400) + 'd';
+  }
+  function setLive(id, text) {
+    const el = document.getElementById(id);
+    if (!el || el.textContent === text) return;
+    el.textContent = text;
+    el.classList.remove('num-flash'); void el.offsetWidth; el.classList.add('num-flash');
+  }
+
+  /* ── Chart ───────────────────────────────────────────────── */
+  Chart.defaults.color       = '#5a6278';
+  Chart.defaults.borderColor = 'rgba(255,255,255,0.03)';
+  Chart.defaults.font.family = "'JetBrains Mono','Fira Code','Consolas',monospace";
+  Chart.defaults.font.size   = 11;
+
+  const lineCtx = document.getElementById('traffic-chart').getContext('2d');
+
+  function mkGrad(ctx, r, g, b) {
+    const g2 = ctx.createLinearGradient(0,0,0,185);
+    g2.addColorStop(0, `rgba(${r},${g},${b},0.35)`);
+    g2.addColorStop(1, `rgba(${r},${g},${b},0.01)`);
+    return g2;
+  }
+
+  const lineChart = new Chart(lineCtx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        { label:'↓ RX', data:[], fill:true,
+          borderColor:'#3b82f6', backgroundColor: mkGrad(lineCtx,59,130,246),
+          borderWidth:1.5, pointRadius:0, tension:0.38 },
+        { label:'↑ TX', data:[], fill:true,
+          borderColor:'#7c6af7', backgroundColor: mkGrad(lineCtx,124,106,247),
+          borderWidth:1.5, pointRadius:0, tension:0.38 },
+      ],
+    },
+    options: {
+      animation: { duration: 60 },
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode:'index', intersect:false },
+      plugins: {
+        legend: { position:'top', labels:{ boxWidth:7, padding:14, usePointStyle:true, pointStyle:'circle' } },
+        tooltip: {
+          backgroundColor:'#141724', borderColor:'#2a2f4a', borderWidth:1, padding:8,
+          callbacks: { label: c => '  ' + fmtRate(c.parsed.y) },
+        },
+      },
+      scales: {
+        x: { grid:{ color:'rgba(255,255,255,0.02)' }, ticks:{ maxTicksLimit:5, maxRotation:0 } },
+        y: { grid:{ color:'rgba(255,255,255,0.02)' }, min:0,
+             ticks:{ callback: v => fmtRate(v), maxTicksLimit:4 } },
+      },
+    },
+  });
+
+  /* ── Live indicator ──────────────────────────────────────── */
+  const dot   = document.getElementById('live-dot');
+  const badge = document.getElementById('live-badge');
+  const agoEl = document.getElementById('ago-counter');
+  let lastOk  = Date.now();
+
+  setInterval(() => {
+    const sec = Math.round((Date.now() - lastOk) / 1000);
+    agoEl.textContent = sec < 2 ? '' : sec + 's ago';
+  }, 1000);
+
+  function markLive()  { lastOk = Date.now(); dot.classList.remove('stale'); badge.classList.remove('stale'); }
+  function markStale() { dot.classList.add('stale'); badge.classList.add('stale'); }
+
+  /* ── RAF speed animation ─────────────────────────────────── */
+  const sp = { rx:0, tx:0, rxT:0, txT:0 };
+  const rxEl = document.getElementById('rx-rate-num');
+  const txEl = document.getElementById('tx-rate-num');
+  let lastRxS = '', lastTxS = '';
+
+  function animateSpeed() {
+    sp.rx += (sp.rxT - sp.rx) * 0.14;
+    sp.tx += (sp.txT - sp.tx) * 0.14;
+    const rs = fmtRate(sp.rx), ts = fmtRate(sp.tx);
+    if (rs !== lastRxS && rxEl) { rxEl.textContent = rs; lastRxS = rs; }
+    if (ts !== lastTxS && txEl) { txEl.textContent = ts; lastTxS = ts; }
+    requestAnimationFrame(animateSpeed);
+  }
+  animateSpeed();
+
+  /* ── Poll /api/stats ─────────────────────────────────────── */
+  function refresh() {
+    fetch('/api/stats')
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(d => {
+        markLive();
+
+        /* speed targets */
+        sp.rxT = d.total_rx_rate;
+        sp.txT = d.total_tx_rate;
+
+        /* totals */
+        const rxTot = document.getElementById('rx-total-display');
+        const txTot = document.getElementById('tx-total-display');
+        if (rxTot) rxTot.textContent = d.total_rx_fmt;
+        if (txTot) txTot.textContent = d.total_tx_fmt;
+
+        /* stat bar */
+        setLive('lv-active', String(d.active_count));
+        setLive('lv-total',  String(d.peer_count));
+        setLive('lv-rx',     d.total_rx_fmt);
+        setLive('lv-tx',     d.total_tx_fmt);
+        const wgEl = document.getElementById('lv-wg');
+        if (wgEl) {
+          const next = d.wg_running ? '● RUN' : '○ DOWN';
+          if (wgEl.textContent !== next) {
+            wgEl.textContent = next;
+            wgEl.style.color = d.wg_running ? 'var(--success)' : 'var(--danger)';
+          }
+        }
+
+        /* chart */
+        lineChart.data.labels           = d.history.map(h => fmtTime(h.ts));
+        lineChart.data.datasets[0].data = d.history.map(h => h.rx_rate);
+        lineChart.data.datasets[1].data = d.history.map(h => h.tx_rate);
+        lineChart.update();
+
+        /* peer rows */
+        d.peers.forEach(p => {
+          const row = document.querySelector(`tr[data-vpn="${p.vpn_ip}"]`);
+          if (!row) return;
+          const id  = row.dataset.id;
+          const dot = document.getElementById(`dot-${id}`);
+          const rxE = document.getElementById(`rx-${id}`);
+          const txE = document.getElementById(`tx-${id}`);
+          const hsE = document.getElementById(`hs-${id}`);
+          if (dot) dot.className = `noc-dot ${p.is_active ? 'noc-dot-green' : 'noc-dot-dim'}`;
+          if (rxE) rxE.textContent = '↓ ' + p.rx_fmt;
+          if (txE) txE.textContent = ' ↑ ' + p.tx_fmt;
+          if (hsE) hsE.textContent = relTime(p.last_handshake_ts);
+        });
+      })
+      .catch(markStale);
+  }
+
+  refresh();
+  setInterval(refresh, INTERVAL);
+})();
+
+/* ── Server health polling ────────────────────────────────── */
+(function () {
+  function refreshHealth() {
+    fetch('/api/server/health')
+      .then(r => r.json())
+      .then(d => {
+        const cpu  = document.getElementById('hv-cpu');
+        const ram  = document.getElementById('hv-ram');
+        const disk = document.getElementById('hv-disk');
+        const wgup = document.getElementById('hv-wgup');
+        const spd  = document.getElementById('hv-speed');
+
+        if (cpu  && d.cpu_percent !== null)
+          cpu.textContent = d.cpu_percent + '%';
+        if (ram  && d.memory)
+          ram.textContent  = d.memory.used_gb + ' / ' + d.memory.total_gb + ' GB';
+        if (disk && d.disk)
+          disk.textContent = d.disk.used_gb + ' / ' + d.disk.total_gb + ' GB';
+        if (wgup) {
+          if (d.wg_uptime) {
+            wgup.textContent = d.wg_uptime;
+            wgup.style.color = '';
+          } else {
+            wgup.textContent = d.wg_running ? '—' : 'DOWN';
+            wgup.style.color = d.wg_running ? '' : 'var(--danger)';
+          }
+        }
+        if (spd) {
+          if (d.last_speedtest) {
+            const s = d.last_speedtest;
+            spd.textContent = '↓' + s.download_mbps + '  ↑' + s.upload_mbps + ' Mbps';
+          } else {
+            spd.textContent = 'no data';
+          }
+        }
+      })
+      .catch(() => {});
+  }
+  refreshHealth();
+  setInterval(refreshHealth, 30000);
+})();
+</script>
+{% endblock %}

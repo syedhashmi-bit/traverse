@@ -1,0 +1,607 @@
+{% extends 'base.html' %}
+{% block title %}{{ peer.name }}{% endblock %}
+{% block page_title %}Peer: {{ peer.name }}{% endblock %}
+
+{% block content %}
+<div class="section-header mb-16">
+  <div>
+    <div class="section-title">{{ peer.name }}</div>
+    <div class="section-sub">{{ peer.vpn_ip }} · created {{ peer.created_at[:10] }}</div>
+  </div>
+  <div class="action-bar">
+    <a href="{{ url_for('peers.download_config', peer_id=peer.id) }}"
+       class="btn btn-secondary">↓ Download .conf</a>
+    <form method="POST" action="{{ url_for('peers.toggle', peer_id=peer.id) }}" style="display:inline;">
+      {% if peer.enabled %}
+        <button type="submit" class="btn btn-warning">○ Disable</button>
+      {% else %}
+        <button type="submit" class="btn btn-success">● Enable</button>
+      {% endif %}
+    </form>
+    <button type="button" class="btn btn-secondary" onclick="document.getElementById('regen-modal').style.display='flex'">
+      ↺ Regenerate Config
+    </button>
+  </div>
+</div>
+
+<div class="detail-grid">
+  <!-- Left column -->
+  <div style="display:flex; flex-direction:column; gap:20px;">
+
+    <!-- Peer Info -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">Peer Info</span></div>
+      <div class="card-body">
+        <div class="detail-field">
+          <div class="detail-label">Status</div>
+          <div class="detail-value">
+            {% if peer.enabled %}
+              <span class="badge badge-success">● enabled</span>
+            {% else %}
+              <span class="badge badge-muted">○ disabled</span>
+            {% endif %}
+          </div>
+        </div>
+        <div class="detail-field">
+          <div class="detail-label">VPN IP</div>
+          <div class="detail-value mono">{{ peer.vpn_ip }}/32</div>
+        </div>
+        <div class="detail-field">
+          <div class="detail-label">DNS</div>
+          <div class="detail-value mono">{{ peer.dns }}</div>
+        </div>
+        <div class="detail-field">
+          <div class="detail-label">Endpoint</div>
+          <div class="detail-value mono">{{ peer.endpoint }}:{{ wg_port }}</div>
+        </div>
+        <div class="detail-field">
+          <div class="detail-label">AllowedIPs</div>
+          <div class="detail-value mono">0.0.0.0/0 (full tunnel)</div>
+        </div>
+        <div class="detail-field">
+          <div class="detail-label">Expires</div>
+          <div class="detail-value">
+            {% if peer.expires_at %}
+              {% if peer.is_expired %}
+                <span class="badge badge-warning">EXPIRED</span>
+                <span class="text-sm text-muted" style="margin-left:6px;">{{ peer.expires_at }}</span>
+              {% else %}
+                <span class="text-sm">{{ peer.expires_at }}</span>
+              {% endif %}
+            {% else %}
+              <span class="text-dim text-sm">No expiry</span>
+            {% endif %}
+          </div>
+        </div>
+        {% if peer.config_regenerated_at %}
+        <div class="detail-field">
+          <div class="detail-label">Config Regenerated</div>
+          <div class="detail-value text-sm text-muted">{{ peer.config_regenerated_at[:19] }} UTC</div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Live Stats -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Live Stats</span>
+        <div class="live-header-right">
+          <span id="peer-ago"></span>
+          <span class="live-badge" id="peer-live-badge">
+            <span class="live-dot" id="peer-live-dot"></span>
+            LIVE
+          </span>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="detail-field">
+          <div class="detail-label">Connection</div>
+          <div class="detail-value" id="lv-peer-active">
+            {% if peer.last_handshake != 'Never' %}
+              <span class="badge badge-success">● connected</span>
+            {% else %}
+              <span class="badge badge-muted">○ not seen</span>
+            {% endif %}
+          </div>
+        </div>
+        <div class="detail-field">
+          <div class="detail-label">Last Handshake</div>
+          <div class="detail-value" id="lv-peer-hs">{{ peer.last_handshake }}</div>
+        </div>
+        <div class="detail-field">
+          <div class="detail-label">Received (RX)</div>
+          <div class="detail-value" id="lv-peer-rx">{{ peer.rx_fmt }}</div>
+        </div>
+        <div class="detail-field">
+          <div class="detail-label">Sent (TX)</div>
+          <div class="detail-value" id="lv-peer-tx">{{ peer.tx_fmt }}</div>
+        </div>
+        <div class="detail-field" id="speed-row" style="display:none;">
+          <div class="detail-label">Current Speed</div>
+          <div class="detail-value" style="display:flex; gap:16px; flex-wrap:wrap;">
+            <span style="color:var(--info);">↓ <span id="lv-peer-rx-rate">–</span></span>
+            <span style="color:var(--accent);">↑ <span id="lv-peer-tx-rate">–</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ping -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Latency</span>
+        {% if peer.last_ping_at %}
+        <span class="text-xs text-muted">Last: {{ '%.1f'|format(peer.last_ping_ms) }} ms avg · {{ peer.last_ping_at[:19] }} UTC</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        <button type="button" class="btn btn-secondary" id="ping-btn" onclick="doPing()">
+          ⟳ Ping peer
+        </button>
+        <div id="ping-result" style="margin-top:12px; display:none;"></div>
+      </div>
+    </div>
+
+    <!-- Bandwidth (last 60 min) -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Bandwidth — Last 60 min</span>
+        <span class="text-xs text-muted" id="bw-label">loading…</span>
+      </div>
+      <div class="card-body" style="padding-top:16px; padding-bottom:14px;">
+        <div style="position:relative; height:150px;">
+          <canvas id="bw-chart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- 30-Day Usage -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">30-Day Usage</span>
+        <span class="text-xs text-muted" id="hist-label">loading…</span>
+      </div>
+      <div class="card-body" style="padding-top:16px; padding-bottom:14px;">
+        <div style="position:relative; height:150px;">
+          <canvas id="hist-chart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Connection History -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Connection History</span>
+        <a href="{{ url_for('history.history_view') }}" class="btn btn-secondary btn-sm">All events</a>
+      </div>
+      {% if events %}
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Event</th>
+              <th>When</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for ev in events %}
+            <tr>
+              <td>
+                {% if ev.event_type == 'connected' %}
+                  <span class="badge badge-success">● connected</span>
+                {% else %}
+                  <span class="badge badge-muted">○ disconnected</span>
+                {% endif %}
+              </td>
+              <td class="text-sm text-muted" title="{{ ev.timestamp }} UTC">{{ ev.timestamp[:19] }} UTC</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="card-body text-sm text-dim">No connection events recorded yet.</div>
+      {% endif %}
+    </div>
+
+  </div>
+
+  <!-- Right column -->
+  <div style="display:flex; flex-direction:column; gap:20px;">
+
+    <!-- Keys (sensitive — only shown here) -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Keys</span>
+        <span class="badge badge-warning" style="font-size:0.65rem;">sensitive</span>
+      </div>
+      <div class="card-body">
+        <div class="detail-field">
+          <div class="detail-label">Public Key</div>
+          <div class="copy-block-wrap">
+            <div class="code-block code-wrap" id="pub-key">{{ peer.public_key }}</div>
+            <button class="copy-btn"
+                    onclick="copyText(document.getElementById('pub-key').textContent, this)">
+              Copy
+            </button>
+          </div>
+        </div>
+        <div class="detail-field">
+          <div class="detail-label">Private Key <span class="text-danger">(keep secret)</span></div>
+          <div class="copy-block-wrap">
+            <div class="code-block code-wrap" id="priv-key">{{ peer.private_key }}</div>
+            <button class="copy-btn"
+                    onclick="copyText(document.getElementById('priv-key').textContent, this)">
+              Copy
+            </button>
+          </div>
+        </div>
+        <div class="detail-field mb-4">
+          <div class="detail-label">Preshared Key</div>
+          <div class="copy-block-wrap">
+            <div class="code-block code-wrap" id="psk">{{ peer.preshared_key }}</div>
+            <button class="copy-btn"
+                    onclick="copyText(document.getElementById('psk').textContent, this)">
+              Copy
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Client Config -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Client Config</span>
+        <a href="{{ url_for('peers.download_config', peer_id=peer.id) }}"
+           class="btn btn-secondary btn-sm">↓ Download</a>
+      </div>
+      <div class="card-body">
+        <div class="copy-block-wrap">
+          <pre class="code-block" id="config-text">{{ config_text }}</pre>
+          <button class="copy-btn"
+                  onclick="copyText(document.getElementById('config-text').textContent, this)">
+            Copy
+          </button>
+        </div>
+        <div class="mt-8 text-xs text-muted">
+          Save as <code style="color:var(--accent)">{{ peer.name }}.conf</code>
+          and import into WireGuard, or scan the QR code below.
+        </div>
+      </div>
+    </div>
+
+    <!-- QR Code -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">QR Code</span>
+        <span class="text-xs text-muted">Scan with WireGuard mobile app</span>
+      </div>
+      <div class="card-body">
+        <div class="qr-wrapper" style="padding:16px;">
+          <img src="{{ url_for('peers.qr_image', peer_id=peer.id) }}"
+               alt="WireGuard QR for {{ peer.name }}"
+               style="max-width:220px; width:100%; border-radius:10px; border:5px solid #fff;">
+          <div class="text-xs text-muted text-center" style="margin-top:8px;">
+            Point your WireGuard app camera at this code
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notes & Device -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Notes &amp; Device</span>
+        {% set icons = {'phone': '📱', 'laptop': '💻', 'desktop': '🖥', 'tablet': '📋', 'router': '🌐', 'other': '◈'} %}
+        <span class="device-badge">{{ icons.get(peer.device or 'other', '◈') }} {{ (peer.device or 'other')|capitalize }}</span>
+      </div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('peers.edit', peer_id=peer.id) }}">
+          <div class="form-group">
+            <label class="form-label">Expires On <span class="text-dim">(optional)</span></label>
+            <input class="form-input" type="date" name="expires_at"
+                   value="{{ peer.expires_at or '' }}">
+            <div class="form-hint">Leave blank to remove expiry.</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Device Type</label>
+            <select class="form-select" name="device">
+              {% for d, label, icon in [
+                ('phone',   'Phone',   '📱'),
+                ('laptop',  'Laptop',  '💻'),
+                ('desktop', 'Desktop', '🖥'),
+                ('tablet',  'Tablet',  '📋'),
+                ('router',  'Router',  '🌐'),
+                ('other',   'Other',   '◈'),
+              ] %}
+              <option value="{{ d }}" {% if (peer.device or 'other') == d %}selected{% endif %}>{{ icon }} {{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Notes</label>
+            <textarea class="form-textarea" name="notes" rows="3"
+                      placeholder="e.g. iPhone 15, home office laptop…">{{ peer.notes or '' }}</textarea>
+          </div>
+          <button type="submit" class="btn btn-primary btn-sm">Save</button>
+        </form>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Regenerate modal -->
+<div id="regen-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6);
+     z-index:500; align-items:center; justify-content:center; backdrop-filter:blur(3px);">
+  <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg);
+              padding:28px; max-width:420px; width:90%; margin:0 16px;">
+    <div style="font-size:1rem; font-weight:700; color:var(--text); margin-bottom:10px;">Regenerate Config</div>
+    <div style="font-size:0.875rem; color:var(--text-muted); margin-bottom:20px; line-height:1.6;">
+      This will generate a new keypair for <strong>{{ peer.name }}</strong>.<br>
+      The existing config and QR code will <strong style="color:var(--danger);">stop working immediately</strong>.
+      Make sure you download the new config afterwards.
+    </div>
+    <div class="action-bar">
+      <form method="POST" action="{{ url_for('peers.regenerate', peer_id=peer.id) }}">
+        <button type="submit" class="btn btn-danger">Yes, regenerate</button>
+      </form>
+      <button type="button" class="btn btn-secondary"
+              onclick="document.getElementById('regen-modal').style.display='none'">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Danger zone -->
+<div class="danger-zone mt-24">
+  <div class="danger-zone-title">Danger Zone</div>
+  <div class="flex items-center justify-between" style="flex-wrap:wrap; gap:12px;">
+    <div class="text-sm text-muted">
+      Permanently delete this peer from the database and remove it from the WireGuard interface.
+    </div>
+    <form method="POST" action="{{ url_for('peers.delete', peer_id=peer.id) }}"
+          data-confirm="Delete peer &quot;{{ peer.name }}&quot;? This cannot be undone.">
+      <button type="submit" class="btn btn-danger">Delete Peer</button>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/chart.min.js') }}"></script>
+<script>
+/* ── 30-Day bandwidth history chart ─────────────────────────────────── */
+(function () {
+  function fmtBytes(b) {
+    if (b < 1024)       return b + ' B';
+    if (b < 1048576)    return (b / 1024).toFixed(1) + ' KB';
+    if (b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
+    return (b / 1073741824).toFixed(2) + ' GB';
+  }
+
+  Chart.defaults.color       = '#8892a4';
+  Chart.defaults.borderColor = 'rgba(255,255,255,0.04)';
+  Chart.defaults.font.family = "'Inter','Segoe UI',system-ui,sans-serif";
+  Chart.defaults.font.size   = 11;
+
+  fetch('/api/peer-history/{{ peer.id }}')
+    .then(r => r.json())
+    .then(d => {
+      const lbl = document.getElementById('hist-label');
+      const samples = (d.samples || []).filter(s => s.rx_bytes > 0 || s.tx_bytes > 0);
+      if (samples.length === 0) {
+        if (lbl) lbl.textContent = 'no data yet';
+        return;
+      }
+      if (lbl) lbl.textContent = samples.length + ' day' + (samples.length === 1 ? '' : 's');
+      const ctx = document.getElementById('hist-chart').getContext('2d');
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: samples.map(s => s.day.slice(5)),
+          datasets: [
+            { label: 'RX', data: samples.map(s => s.rx_bytes),
+              backgroundColor: 'rgba(59,130,246,0.7)', borderRadius: 3, borderSkipped: false },
+            { label: 'TX', data: samples.map(s => s.tx_bytes),
+              backgroundColor: 'rgba(124,106,247,0.7)', borderRadius: 3, borderSkipped: false },
+          ],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          animation: { duration: 350 },
+          plugins: {
+            legend: { position: 'top', labels: { boxWidth: 9, padding: 14, usePointStyle: true, pointStyle: 'circle' } },
+            tooltip: {
+              backgroundColor: '#141724', borderColor: '#2a2f4a', borderWidth: 1, padding: 10,
+              callbacks: { label: c => '  ' + fmtBytes(c.parsed.y) },
+            },
+          },
+          scales: {
+            x: { grid: { color: 'rgba(255,255,255,0.03)' },
+                 ticks: { maxRotation: 45, font: { size: 10 } } },
+            y: { grid: { color: 'rgba(255,255,255,0.03)' }, min: 0,
+                 ticks: { callback: v => fmtBytes(v), maxTicksLimit: 5 } },
+          },
+        },
+      });
+    })
+    .catch(() => {
+      const lbl = document.getElementById('hist-label');
+      if (lbl) lbl.textContent = 'unavailable';
+    });
+})();
+</script>
+<script>
+/* ── Live peer stats polling ─────────────────────────────────────────── */
+(function () {
+  const PEER_VPN_IP = {{ peer.vpn_ip | tojson }};
+  const INTERVAL    = 1000;
+
+  function fmtRate(b) {
+    if (b === 0)             return '0 B/s';
+    if (b < 1024)            return b.toFixed(0)           + ' B/s';
+    if (b < 1024 * 1024)     return (b / 1024).toFixed(1)  + ' KB/s';
+    return (b / 1024 / 1024).toFixed(2) + ' MB/s';
+  }
+
+  function setEl(id, html, animate) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (animate && el.innerHTML !== html) {
+      el.innerHTML = html;
+      el.classList.remove('num-flash'); void el.offsetWidth;
+      el.classList.add('num-flash');
+    } else {
+      el.innerHTML = html;
+    }
+  }
+
+  const dot    = document.getElementById('peer-live-dot');
+  const badge  = document.getElementById('peer-live-badge');
+  const agoEl  = document.getElementById('peer-ago');
+  let lastOk   = Date.now();
+
+  setInterval(() => {
+    const sec = Math.round((Date.now() - lastOk) / 1000);
+    agoEl.textContent = sec < 2 ? '' : sec + 's ago';
+  }, 1000);
+
+  function markLive()  { lastOk = Date.now(); dot.classList.remove('stale'); badge.classList.remove('stale'); }
+  function markStale() { dot.classList.add('stale'); badge.classList.add('stale'); }
+
+  function refresh() {
+    fetch('/api/stats')
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(d => {
+        markLive();
+        const p = d.peers.find(x => x.vpn_ip === PEER_VPN_IP);
+        if (!p) return;
+
+        const activeBadge = p.is_active
+          ? '<span class="badge badge-success">● connected</span>'
+          : '<span class="badge badge-muted">○ not seen</span>';
+        setEl('lv-peer-active', activeBadge, false);
+        setEl('lv-peer-hs',  p.last_handshake, true);
+        setEl('lv-peer-rx',  p.rx_fmt,         true);
+        setEl('lv-peer-tx',  p.tx_fmt,         true);
+
+        const speedRow = document.getElementById('speed-row');
+        if (p.rx_rate > 0 || p.tx_rate > 0) {
+          speedRow.style.display = '';
+          setEl('lv-peer-rx-rate', fmtRate(p.rx_rate), true);
+          setEl('lv-peer-tx-rate', fmtRate(p.tx_rate), true);
+        } else {
+          speedRow.style.display = 'none';
+        }
+      })
+      .catch(markStale);
+  }
+
+  refresh();
+  setInterval(refresh, INTERVAL);
+})();
+</script>
+<script>
+/* ── Ping ───────────────────────────────────────────────────────────── */
+function doPing() {
+  const btn = document.getElementById('ping-btn');
+  const res = document.getElementById('ping-result');
+  btn.disabled = true;
+  btn.textContent = '⟳ Pinging…';
+  res.style.display = 'none';
+  fetch('/api/peer/{{ peer.id }}/ping')
+    .then(r => r.json())
+    .then(d => {
+      btn.disabled = false;
+      btn.textContent = '⟳ Ping peer';
+      res.style.display = '';
+      if (d.reachable) {
+        res.innerHTML = `<div style="font-family:var(--mono);font-size:0.82rem;line-height:1.9;">
+          <span style="color:var(--success);">● reachable</span><br>
+          <span class="text-muted">min</span> ${d.min.toFixed(1)} ms &nbsp;
+          <span class="text-muted">avg</span> <strong>${d.avg.toFixed(1)} ms</strong> &nbsp;
+          <span class="text-muted">max</span> ${d.max.toFixed(1)} ms &nbsp;
+          <span class="text-muted">loss</span> ${d.loss}%
+        </div>`;
+      } else {
+        res.innerHTML = `<span class="badge badge-muted">○ ${d.reason || 'not reachable'}</span>`;
+      }
+    })
+    .catch(() => {
+      btn.disabled = false;
+      btn.textContent = '⟳ Ping peer';
+      res.style.display = '';
+      res.innerHTML = '<span class="badge badge-danger">Request failed</span>';
+    });
+}
+</script>
+<script>
+/* ── Per-peer bandwidth chart ────────────────────────────────────────── */
+(function () {
+  function fmtRate(b) {
+    if (b < 1024)       return b.toFixed(0) + ' B/s';
+    if (b < 1048576)    return (b / 1024).toFixed(1) + ' KB/s';
+    return (b / 1048576).toFixed(2) + ' MB/s';
+  }
+
+  fetch('/api/peer/{{ peer.id }}/bandwidth')
+    .then(r => r.json())
+    .then(d => {
+      const lbl = document.getElementById('bw-label');
+      if (!d.points || d.points.length < 2) {
+        if (lbl) lbl.textContent = 'not enough data yet';
+        return;
+      }
+      if (lbl) lbl.textContent = d.points.length + ' min of data';
+      const ctx = document.getElementById('bw-chart').getContext('2d');
+
+      function mkGrad(r, g, b) {
+        const g2 = ctx.createLinearGradient(0, 0, 0, 150);
+        g2.addColorStop(0, `rgba(${r},${g},${b},0.3)`);
+        g2.addColorStop(1, `rgba(${r},${g},${b},0.01)`);
+        return g2;
+      }
+
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: d.points.map(p => p.ts),
+          datasets: [
+            { label: '↓ RX', data: d.points.map(p => p.rx_rate), fill: true,
+              borderColor: '#3b82f6', backgroundColor: mkGrad(59, 130, 246),
+              borderWidth: 1.5, pointRadius: 0, tension: 0.38 },
+            { label: '↑ TX', data: d.points.map(p => p.tx_rate), fill: true,
+              borderColor: '#7c6af7', backgroundColor: mkGrad(124, 106, 247),
+              borderWidth: 1.5, pointRadius: 0, tension: 0.38 },
+          ],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          animation: { duration: 300 },
+          plugins: {
+            legend: { position: 'top', labels: { boxWidth: 8, padding: 12, usePointStyle: true, pointStyle: 'circle' } },
+            tooltip: {
+              backgroundColor: '#141724', borderColor: '#2a2f4a', borderWidth: 1, padding: 8,
+              callbacks: { label: c => '  ' + fmtRate(c.parsed.y) },
+            },
+          },
+          scales: {
+            x: { grid: { color: 'rgba(255,255,255,0.02)' },
+                 ticks: { maxTicksLimit: 8, maxRotation: 0, font: { size: 10 } } },
+            y: { grid: { color: 'rgba(255,255,255,0.02)' }, min: 0,
+                 title: { display: true, text: 'Speed', font: { size: 10 }, color: '#5a6278' },
+                 ticks: { callback: v => fmtRate(v), maxTicksLimit: 4, font: { size: 10 } } },
+          },
+        },
+      });
+    })
+    .catch(() => {
+      const lbl = document.getElementById('bw-label');
+      if (lbl) lbl.textContent = 'unavailable';
+    });
+})();
+</script>
+{% endblock %}
