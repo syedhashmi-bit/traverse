@@ -1,8 +1,15 @@
-# Traverse
+<img width="1254" height="1254" alt="app" src="https://github.com/user-attachments/assets/26d75f18-7a2e-4c23-be28-4ff3207a8e08" />
+
+
+### Traverse
 
 A self-hosted WireGuard VPN dashboard built with Flask. Manage peers, monitor live traffic, view connection maps, and control your WireGuard interface — all from a clean dark-themed web UI.
 
-![Traverse Dashboard](static/img/app.png)
+<img width="1633" height="1145" alt="image" src="https://github.com/user-attachments/assets/abe368e0-691f-458d-b5eb-eff73840fdff" />
+
+<img width="1628" height="1110" alt="image" src="https://github.com/user-attachments/assets/4be98729-2577-4475-895c-56c4db91f40d" />
+
+
 
 ## Features
 
