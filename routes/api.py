@@ -230,12 +230,28 @@ _pihole_stats_cache = {'ts': 0.0, 'data': None}
 _PIHOLE_STATS_TTL   = 55.0   # slightly under 60 s frontend poll
 
 
+def _pihole_logout(sid):
+    """DELETE a Pi-hole v6 session to free a seat."""
+    try:
+        req = _ureq.Request(
+            'http://10.8.0.1:8080/api/auth',
+            headers={'X-FTL-SID': sid},
+            method='DELETE',
+        )
+        _ureq.urlopen(req, timeout=3)
+    except Exception:
+        pass
+
+
 def _pihole_auth():
     """Return a valid Pi-hole v6 session SID, refreshing if expired."""
     import os
     now = time.time()
     if _pihole_session['sid'] and now < _pihole_session['expires']:
         return _pihole_session['sid']
+    # Logout old session before creating a new one to free the seat
+    if _pihole_session['sid']:
+        _pihole_logout(_pihole_session['sid'])
     _pihole_session['sid'] = None
     password = os.getenv('PIHOLE_PASSWORD', '')
     if not password:
@@ -248,7 +264,7 @@ def _pihole_auth():
             headers={'Content-Type': 'application/json'},
             method='POST',
         )
-        with _ureq.urlopen(req, timeout=3) as resp:
+        with _ureq.urlopen(req, timeout=5) as resp:
             data = _json.loads(resp.read())
         sess = data.get('session', {})
         if sess.get('valid') and sess.get('sid'):
@@ -274,7 +290,7 @@ def _fetch_pihole_summary():
             'http://10.8.0.1:8080/api/stats/summary',
             headers={'X-FTL-SID': sid},
         )
-        with _ureq.urlopen(req, timeout=3) as resp:
+        with _ureq.urlopen(req, timeout=5) as resp:
             data = _json.loads(resp.read())
         _pihole_stats_cache['ts']   = now
         _pihole_stats_cache['data'] = data
