@@ -56,6 +56,11 @@
                    font-family:var(--font);">{{ unseen_alert_count if unseen_alert_count < 10 else '9+' }}</span>
       {% endif %}
     </a>
+    <a href="{{ url_for('port_forwards.index') }}"
+       class="nav-link {% if request.blueprint == 'port_forwards' %}active{% endif %}"
+       data-tooltip="Port Forwards">
+      <span class="icon">⇄</span>
+    </a>
     <a href="{{ url_for('topology.topology_view') }}"
        class="nav-link {% if request.blueprint == 'topology' %}active{% endif %}"
        data-tooltip="Topology">

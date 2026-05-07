@@ -30,6 +30,7 @@
         <th>Device</th>
         <th>VPN IP</th>
         <th>DNS</th>
+        <th>Tunnel</th>
         <th>Status</th>
         <th>Last Seen</th>
         <th>Session</th>
@@ -66,6 +67,16 @@
         </td>
         <td class="td-mono">{{ peer.vpn_ip }}</td>
         <td class="td-mono text-dim">{{ peer.dns }}</td>
+        <td>
+          {% set tm = peer.tunnel_mode or 'full' %}
+          {% if tm == 'vpn_only' %}
+            <span class="badge" style="background:rgba(34,211,238,.15); color:#22d3ee; border:1px solid rgba(34,211,238,.3);">VPN</span>
+          {% elif tm == 'split' %}
+            <span class="badge" style="background:rgba(251,191,36,.15); color:#fbbf24; border:1px solid rgba(251,191,36,.3);">SPLIT</span>
+          {% else %}
+            <span class="badge badge-success" style="opacity:.75;">FULL</span>
+          {% endif %}
+        </td>
         <td>
           {% if peer.enabled %}
             <span class="badge badge-success">● on</span>
@@ -107,7 +118,7 @@
       </tr>
       {% endfor %}
       <tr id="peer-search-empty" style="display:none;">
-        <td colspan="13" style="padding:24px; text-align:center; color:var(--text-muted);">
+        <td colspan="14" style="padding:24px; text-align:center; color:var(--text-muted);">
           🔍 No peers match <span id="peer-search-term" class="mono"></span>
         </td>
       </tr>

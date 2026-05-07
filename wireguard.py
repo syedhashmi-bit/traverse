@@ -79,10 +79,27 @@ def get_interface_status():
 
 # ── Live peer management ─────────────────────────────────────────────────────
 
-def add_peer_to_interface(public_key, preshared_key, vpn_ip):
-    """Add peer to running WireGuard interface via wg set."""
+def _effective_allowed_ips(vpn_ip, tunnel_mode, custom_routes=''):
+    """Return the client-side AllowedIPs string for a given tunnel mode.
+    Used in client config generation only — not for wg set server-side."""
+    if tunnel_mode == 'vpn_only':
+        return WG_SUBNET
+    if tunnel_mode == 'split':
+        parts = [WG_SUBNET]
+        for cidr in (custom_routes or '').split(','):
+            cidr = cidr.strip()
+            if cidr:
+                parts.append(cidr)
+        return ', '.join(parts)
+    # default: full tunnel
+    return '0.0.0.0/0, ::/0'
+
+
+def add_peer_to_interface(public_key, preshared_key, vpn_ip,
+                          tunnel_mode='full', custom_routes=''):
+    """Add peer to running WireGuard interface via wg set.
+    Server-side allowed-ips is always vpn_ip/32 — tunnel mode is client-side only."""
     import tempfile, os as _os
-    # Write psk to temp file to avoid it appearing in process list
     with tempfile.NamedTemporaryFile(mode='w', suffix='.psk', delete=False) as f:
         f.write(preshared_key)
         psk_path = f.name
@@ -157,7 +174,11 @@ def is_peer_active(last_handshake_ts, threshold=300):
 
 def generate_client_config(peer, server_public_key):
     endpoint = peer.get('endpoint') or WG_ENDPOINT
-    dns      = peer.get('dns')      or WG_DNS
+    # dns_override takes precedence over dns field, which falls back to WG_DNS
+    dns = peer.get('dns_override') or peer.get('dns') or WG_DNS
+    tunnel_mode   = peer.get('tunnel_mode') or 'full'
+    custom_routes = peer.get('custom_routes') or ''
+    allowed_ips   = _effective_allowed_ips(peer['vpn_ip'], tunnel_mode, custom_routes)
     return (
         f"[Interface]\n"
         f"PrivateKey = {peer['private_key']}\n"
@@ -168,7 +189,7 @@ def generate_client_config(peer, server_public_key):
         f"PublicKey = {server_public_key}\n"
         f"PresharedKey = {peer['preshared_key']}\n"
         f"Endpoint = {endpoint}:{WG_PORT}\n"
-        f"AllowedIPs = 0.0.0.0/0\n"
+        f"AllowedIPs = {allowed_ips}\n"
         f"PersistentKeepalive = 25\n"
     )
 

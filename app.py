@@ -23,22 +23,23 @@ def create_app():
     except Exception:
         pass
 
-    from routes.auth      import auth_bp
-    from routes.dashboard import dashboard_bp
-    from routes.peers     import peers_bp
-    from routes.settings  import settings_bp
-    from routes.api       import api_bp
-    from routes.map       import map_bp
-    from routes.history   import history_bp
-    from routes.alerts    import alerts_bp
-    from routes.topology  import topology_bp
-    from routes.logs      import logs_bp
-    from routes.about     import about_bp
+    from routes.auth          import auth_bp
+    from routes.dashboard     import dashboard_bp
+    from routes.peers         import peers_bp
+    from routes.settings      import settings_bp
+    from routes.api           import api_bp
+    from routes.map           import map_bp
+    from routes.history       import history_bp
+    from routes.alerts        import alerts_bp
+    from routes.topology      import topology_bp
+    from routes.logs          import logs_bp
+    from routes.about         import about_bp
+    from routes.port_forwards import pf_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)
-    app.register_blueprint(peers_bp,    url_prefix='/peers')
-    app.register_blueprint(settings_bp, url_prefix='/settings')
+    app.register_blueprint(peers_bp,         url_prefix='/peers')
+    app.register_blueprint(settings_bp,      url_prefix='/settings')
     app.register_blueprint(api_bp)
     app.register_blueprint(map_bp)
     app.register_blueprint(history_bp)
@@ -46,6 +47,7 @@ def create_app():
     app.register_blueprint(topology_bp)
     app.register_blueprint(logs_bp)
     app.register_blueprint(about_bp)
+    app.register_blueprint(pf_bp,            url_prefix='/port-forwards')
 
     from alerts import start_alerts
     start_alerts()

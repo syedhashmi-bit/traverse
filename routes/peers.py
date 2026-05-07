@@ -15,12 +15,14 @@ from database import (
     get_peer_connection_events, update_peer_pihole,
     get_peers_last_connect_ts,
     get_peer_locations, count_peer_locations,
+    update_peer_tunnel, update_peer_dns_override,
+    get_port_forwards,
 )
 from wireguard import (
     generate_keypair, get_next_vpn_ip, get_server_public_key,
     add_peer_to_interface, remove_peer_from_interface,
     generate_client_config, format_bytes, format_handshake,
-    is_peer_active,
+    is_peer_active, _effective_allowed_ips,
     WG_ENDPOINT, WG_DNS, WG_PORT,
 )
 from routes.auth import login_required
@@ -110,9 +112,15 @@ def create():
         flash(f'Peer limit reached ({MAX_PEERS} max). Delete an existing peer to add a new one.', 'error')
         return redirect(url_for('peers.create'))
 
-    name     = request.form.get('name', '').strip()
-    dns      = request.form.get('dns', WG_DNS).strip()
-    endpoint = request.form.get('endpoint', WG_ENDPOINT).strip()
+    name          = request.form.get('name', '').strip()
+    dns           = request.form.get('dns', WG_DNS).strip()
+    endpoint      = request.form.get('endpoint', WG_ENDPOINT).strip()
+    tunnel_mode   = request.form.get('tunnel_mode', 'full').strip()
+    custom_routes = request.form.get('custom_routes', '').strip()
+    dns_override  = request.form.get('dns_override', '').strip()
+
+    if tunnel_mode not in ('full', 'vpn_only', 'split'):
+        tunnel_mode = 'full'
 
     if not _safe_name(name):
         flash('Peer name must be 1–64 alphanumeric/dash/underscore characters.', 'error')
@@ -138,6 +146,7 @@ def create():
         name=name, private_key=priv, public_key=pub,
         preshared_key=psk, vpn_ip=vpn_ip,
         dns=dns, endpoint=endpoint,
+        tunnel_mode=tunnel_mode, custom_routes=custom_routes,
     )
 
     notes      = request.form.get('notes', '').strip()
@@ -148,10 +157,12 @@ def create():
     update_peer_notes(peer_id, notes, device)
     if expires_at:
         update_peer_expiry(peer_id, expires_at)
+    if dns_override:
+        update_peer_dns_override(peer_id, dns_override)
 
     # Try to apply to live interface (non-fatal if WG not running)
     try:
-        add_peer_to_interface(pub, psk, vpn_ip)
+        add_peer_to_interface(pub, psk, vpn_ip, tunnel_mode, custom_routes)
     except Exception as e:
         flash(f'Peer saved but could not add to live interface: {e}', 'warning')
 
@@ -184,13 +195,18 @@ def wizard():
 @login_required
 def api_preview():
     """Generate keys + config preview WITHOUT saving to DB."""
-    data     = request.get_json(silent=True) or {}
-    name     = data.get('name', '').strip()
-    dns      = data.get('dns', WG_DNS).strip()
-    endpoint = data.get('endpoint', WG_ENDPOINT).strip()
-    device   = data.get('device', 'other').strip()
-    notes    = data.get('notes', '').strip()
-    expires  = data.get('expires_at', '').strip()
+    data          = request.get_json(silent=True) or {}
+    name          = data.get('name', '').strip()
+    dns           = data.get('dns', WG_DNS).strip()
+    endpoint      = data.get('endpoint', WG_ENDPOINT).strip()
+    device        = data.get('device', 'other').strip()
+    notes         = data.get('notes', '').strip()
+    expires       = data.get('expires_at', '').strip()
+    tunnel_mode   = data.get('tunnel_mode', 'full').strip()
+    custom_routes = data.get('custom_routes', '').strip()
+    dns_override  = data.get('dns_override', '').strip()
+    if tunnel_mode not in ('full', 'vpn_only', 'split'):
+        tunnel_mode = 'full'
 
     if not _safe_name(name):
         return jsonify({'error': 'Invalid peer name — 1–64 alphanumeric/dash/underscore chars.'}), 400
@@ -213,23 +229,27 @@ def api_preview():
     fake_peer = {
         'name': name, 'private_key': priv, 'public_key': pub,
         'preshared_key': psk, 'vpn_ip': vpn_ip,
-        'allowed_ips': '0.0.0.0/0', 'dns': dns,
+        'dns': dns, 'dns_override': dns_override,
         'endpoint': endpoint, 'enabled': 1,
+        'tunnel_mode': tunnel_mode, 'custom_routes': custom_routes,
     }
     config_text = generate_client_config(fake_peer, server_pub)
 
     return jsonify({
-        'name':       name,
-        'vpn_ip':     vpn_ip,
-        'private_key': priv,
-        'public_key':  pub,
-        'psk':         psk,
-        'config':      config_text,
-        'device':      device,
-        'notes':       notes,
-        'expires_at':  expires,
-        'dns':         dns,
-        'endpoint':    endpoint,
+        'name':          name,
+        'vpn_ip':        vpn_ip,
+        'private_key':   priv,
+        'public_key':    pub,
+        'psk':           psk,
+        'config':        config_text,
+        'device':        device,
+        'notes':         notes,
+        'expires_at':    expires,
+        'dns':           dns,
+        'dns_override':  dns_override,
+        'endpoint':      endpoint,
+        'tunnel_mode':   tunnel_mode,
+        'custom_routes': custom_routes,
     })
 
 
@@ -237,17 +257,20 @@ def api_preview():
 @login_required
 def api_create():
     """Create a peer from wizard — accepts JSON with pre-generated keys."""
-    data       = request.get_json(silent=True) or {}
-    name       = data.get('name', '').strip()
-    priv       = data.get('private_key', '').strip()
-    pub        = data.get('public_key', '').strip()
-    psk        = data.get('psk', '').strip()
-    vpn_ip     = data.get('vpn_ip', '').strip()
-    dns        = data.get('dns', WG_DNS).strip()
-    endpoint   = data.get('endpoint', WG_ENDPOINT).strip()
-    device     = data.get('device', 'other').strip()
-    notes      = data.get('notes', '').strip()
-    expires_at = data.get('expires_at', '').strip() or None
+    data          = request.get_json(silent=True) or {}
+    name          = data.get('name', '').strip()
+    priv          = data.get('private_key', '').strip()
+    pub           = data.get('public_key', '').strip()
+    psk           = data.get('psk', '').strip()
+    vpn_ip        = data.get('vpn_ip', '').strip()
+    dns           = data.get('dns', WG_DNS).strip()
+    endpoint      = data.get('endpoint', WG_ENDPOINT).strip()
+    device        = data.get('device', 'other').strip()
+    notes         = data.get('notes', '').strip()
+    expires_at    = data.get('expires_at', '').strip() or None
+    tunnel_mode   = data.get('tunnel_mode', 'full').strip()
+    custom_routes = data.get('custom_routes', '').strip()
+    dns_override  = data.get('dns_override', '').strip()
 
     if not all([name, priv, pub, psk, vpn_ip]):
         return jsonify({'error': 'Missing required fields.'}), 400
@@ -259,14 +282,19 @@ def api_create():
         return jsonify({'error': 'Peer limit reached.'}), 429
     if device not in _DEVICES:
         device = 'other'
+    if tunnel_mode not in ('full', 'vpn_only', 'split'):
+        tunnel_mode = 'full'
 
     peer_id = create_peer(name=name, private_key=priv, public_key=pub,
-                          preshared_key=psk, vpn_ip=vpn_ip, dns=dns, endpoint=endpoint)
+                          preshared_key=psk, vpn_ip=vpn_ip, dns=dns, endpoint=endpoint,
+                          tunnel_mode=tunnel_mode, custom_routes=custom_routes)
     update_peer_notes(peer_id, notes, device)
     if expires_at:
         update_peer_expiry(peer_id, expires_at)
+    if dns_override:
+        update_peer_dns_override(peer_id, dns_override)
     try:
-        add_peer_to_interface(pub, psk, vpn_ip)
+        add_peer_to_interface(pub, psk, vpn_ip, tunnel_mode, custom_routes)
     except Exception:
         pass
 
@@ -312,6 +340,11 @@ def detail(peer_id):
         loc['flag']      = _flag(loc.get('geo_country_code'))
         loc['masked_ip'] = _mask(loc.get('endpoint_ip'))
 
+    tunnel_mode   = peer.get('tunnel_mode') or 'full'
+    custom_routes = peer.get('custom_routes') or ''
+    effective_ips = _effective_allowed_ips(peer['vpn_ip'], tunnel_mode, custom_routes)
+    port_fwds     = get_port_forwards(peer_id)
+
     return render_template(
         'peers/detail.html',
         peer            = peer,
@@ -322,6 +355,8 @@ def detail(peer_id):
         pihole_enabled  = PIHOLE_ENABLED,
         locations       = locations,
         location_total  = location_total,
+        effective_ips   = effective_ips,
+        port_fwds       = port_fwds,
     )
 
 
@@ -379,13 +414,29 @@ def edit(peer_id):
     peer = get_peer_by_id(peer_id)
     if not peer:
         abort(404)
-    notes      = request.form.get('notes', '').strip()
-    device     = request.form.get('device', 'other').strip()
-    expires_at = request.form.get('expires_at', '').strip() or None
+    notes         = request.form.get('notes', '').strip()
+    device        = request.form.get('device', 'other').strip()
+    expires_at    = request.form.get('expires_at', '').strip() or None
+    tunnel_mode   = request.form.get('tunnel_mode', peer.get('tunnel_mode') or 'full').strip()
+    custom_routes = request.form.get('custom_routes', '').strip()
+    dns_override  = request.form.get('dns_override', '').strip()
     if device not in _DEVICES:
         device = 'other'
+    if tunnel_mode not in ('full', 'vpn_only', 'split'):
+        tunnel_mode = 'full'
     update_peer_notes(peer_id, notes, device)
     update_peer_expiry(peer_id, expires_at)
+    update_peer_tunnel(peer_id, tunnel_mode, custom_routes)
+    update_peer_dns_override(peer_id, dns_override)
+    # Re-apply allowed-ips to live wg0 if peer is enabled
+    if peer.get('enabled'):
+        try:
+            add_peer_to_interface(
+                peer['public_key'], peer['preshared_key'], peer['vpn_ip'],
+                tunnel_mode, custom_routes
+            )
+        except Exception:
+            pass
     flash('Peer updated.', 'success')
     return redirect(url_for('peers.detail', peer_id=peer_id))
 
@@ -407,7 +458,9 @@ def regenerate(peer_id):
     update_peer_keys(peer_id, priv, pub, psk)
     try:
         remove_peer_from_interface(old_pubkey)
-        add_peer_to_interface(pub, psk, peer['vpn_ip'])
+        add_peer_to_interface(pub, psk, peer['vpn_ip'],
+                              peer.get('tunnel_mode') or 'full',
+                              peer.get('custom_routes') or '')
     except Exception as e:
         flash(f'Keys updated but WireGuard sync failed: {e}', 'warning')
     flash('Config regenerated. The old config will no longer work — download or scan the new one below.', 'success')
@@ -428,7 +481,11 @@ def toggle(peer_id):
 
     try:
         if new_state:
-            add_peer_to_interface(peer['public_key'], peer['preshared_key'], peer['vpn_ip'])
+            add_peer_to_interface(
+                peer['public_key'], peer['preshared_key'], peer['vpn_ip'],
+                peer.get('tunnel_mode') or 'full',
+                peer.get('custom_routes') or '',
+            )
             flash(f'Peer "{peer["name"]}" enabled.', 'success')
         else:
             remove_peer_from_interface(peer['public_key'])

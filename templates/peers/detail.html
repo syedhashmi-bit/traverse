@@ -88,8 +88,21 @@
           <div class="detail-value mono">{{ peer.endpoint }}:{{ wg_port }}</div>
         </div>
         <div class="detail-field">
+          <div class="detail-label">Tunnel Mode</div>
+          <div class="detail-value">
+            {% set tm = peer.tunnel_mode or 'full' %}
+            {% if tm == 'vpn_only' %}
+              <span class="badge" style="background:rgba(34,211,238,.15); color:#22d3ee; border:1px solid rgba(34,211,238,.3);">VPN Only</span>
+            {% elif tm == 'split' %}
+              <span class="badge" style="background:rgba(251,191,36,.15); color:#fbbf24; border:1px solid rgba(251,191,36,.3);">Split Tunnel</span>
+            {% else %}
+              <span class="badge badge-success">Full Tunnel</span>
+            {% endif %}
+          </div>
+        </div>
+        <div class="detail-field">
           <div class="detail-label">AllowedIPs</div>
-          <div class="detail-value mono">0.0.0.0/0 (full tunnel)</div>
+          <div class="detail-value mono" style="word-break:break-all; font-size:0.78rem;">{{ effective_ips }}</div>
         </div>
         <div class="detail-field">
           <div class="detail-label">Expires</div>
@@ -252,6 +265,46 @@
       {% endif %}
     </div>
 
+    <!-- Port Forwards -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Port Forwards</span>
+        <a href="{{ url_for('port_forwards.index') }}" class="btn btn-secondary btn-sm">Manage</a>
+      </div>
+      {% if port_fwds %}
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Proto</th>
+              <th>External</th>
+              <th>Internal</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in port_fwds %}
+            <tr>
+              <td><span class="badge badge-muted">{{ r.protocol|upper }}</span></td>
+              <td class="td-mono text-sm">:{{ r.external_port }}</td>
+              <td class="td-mono text-sm">:{{ r.internal_port }}</td>
+              <td>
+                {% if r.enabled %}
+                  <span class="badge badge-success">● on</span>
+                {% else %}
+                  <span class="badge badge-muted">○ off</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="card-body text-sm text-dim">No port forwards for this peer.</div>
+      {% endif %}
+    </div>
+
     <!-- Connection History -->
     <div class="card">
       <div class="card-header">
@@ -383,6 +436,38 @@
       <div class="card-body">
         <form method="POST" action="{{ url_for('peers.edit', peer_id=peer.id) }}">
           <div class="form-group">
+            <label class="form-label">Tunnel Mode</label>
+            <select class="form-select" name="tunnel_mode" id="edit-tunnel-mode">
+              {% set tm = peer.tunnel_mode or 'full' %}
+              <option value="full"     {% if tm == 'full'     %}selected{% endif %}>Full Tunnel (0.0.0.0/0)</option>
+              <option value="vpn_only" {% if tm == 'vpn_only' %}selected{% endif %}>VPN Only (subnet only)</option>
+              <option value="split"    {% if tm == 'split'    %}selected{% endif %}>Split Tunnel (custom CIDRs)</option>
+            </select>
+          </div>
+          <div class="form-group" id="edit-custom-routes-group" style="display:{% if (peer.tunnel_mode or 'full') == 'split' %}block{% else %}none{% endif %};">
+            <label class="form-label">Custom Routes</label>
+            <input class="form-input" type="text" name="custom_routes"
+                   value="{{ peer.custom_routes or '' }}"
+                   placeholder="e.g. 192.168.1.0/24, 10.0.0.0/8">
+            <div class="form-hint">Comma-separated CIDRs (split mode only).</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">DNS Override <span class="text-dim">(optional)</span></label>
+            <select class="form-select" id="edit-dns-preset">
+              {% set cur_dns = peer.dns_override or peer.dns or '' %}
+              <option value="pihole"     {% if cur_dns == '10.8.0.1' %}selected{% endif %}>Pi-hole (10.8.0.1)</option>
+              <option value="cloudflare" {% if cur_dns in ('1.1.1.1, 1.0.0.1', '1.1.1.1') %}selected{% endif %}>Cloudflare (1.1.1.1, 1.0.0.1)</option>
+              <option value="google"     {% if cur_dns in ('8.8.8.8, 8.8.4.4', '8.8.8.8') %}selected{% endif %}>Google (8.8.8.8, 8.8.4.4)</option>
+              <option value="quad9"      {% if cur_dns == '9.9.9.9' %}selected{% endif %}>Quad9 (9.9.9.9)</option>
+              <option value="custom"     {% if cur_dns not in ('10.8.0.1', '1.1.1.1, 1.0.0.1', '1.1.1.1', '8.8.8.8, 8.8.4.4', '8.8.8.8', '9.9.9.9', '') %}selected{% endif %}>Custom…</option>
+            </select>
+            <input type="hidden" id="edit-dns-override" name="dns_override" value="{{ peer.dns_override or '' }}">
+            <div id="edit-custom-dns-grp" style="margin-top:6px; display:{% if peer.dns_override not in ('10.8.0.1', '1.1.1.1, 1.0.0.1', '1.1.1.1', '8.8.8.8, 8.8.4.4', '8.8.8.8', '9.9.9.9', '') and peer.dns_override %}block{% else %}none{% endif %};">
+              <input class="form-input" type="text" id="edit-custom-dns-input"
+                     value="{{ peer.dns_override or '' }}" placeholder="e.g. 8.8.8.8">
+            </div>
+          </div>
+          <div class="form-group">
             <label class="form-label">Expires On <span class="text-dim">(optional)</span></label>
             <input class="form-input" type="date" name="expires_at"
                    value="{{ peer.expires_at or '' }}">
@@ -391,15 +476,8 @@
           <div class="form-group">
             <label class="form-label">Device Type</label>
             <select class="form-select" name="device">
-              {% for d, label, icon in [
-                ('phone',   'Phone',   '📱'),
-                ('laptop',  'Laptop',  '💻'),
-                ('desktop', 'Desktop', '🖥️'),
-                ('tablet',  'Tablet',  '📟'),
-                ('router',  'Router',  '🖧'),
-                ('other',   'Other',   ''),
-              ] %}
-              <option value="{{ d }}" {% if (peer.device or 'other') == d %}selected{% endif %}>{{ icon }} {{ label }}</option>
+              {% for d, label in [('phone','Phone'),('laptop','Laptop'),('desktop','Desktop'),('tablet','Tablet'),('router','Router'),('other','Other')] %}
+              <option value="{{ d }}" {% if (peer.device or 'other') == d %}selected{% endif %}>{{ label }}</option>
               {% endfor %}
             </select>
           </div>
@@ -489,6 +567,43 @@
 })();
 </script>
 <script>
+/* ── Edit form — tunnel mode & DNS preset ──────────────────────────── */
+(function () {
+  const modeSelect  = document.getElementById('edit-tunnel-mode');
+  const routeGroup  = document.getElementById('edit-custom-routes-group');
+  if (modeSelect && routeGroup) {
+    modeSelect.addEventListener('change', () => {
+      routeGroup.style.display = modeSelect.value === 'split' ? '' : 'none';
+    });
+  }
+
+  const dnsPreset  = document.getElementById('edit-dns-preset');
+  const dnsHidden  = document.getElementById('edit-dns-override');
+  const customGrp  = document.getElementById('edit-custom-dns-grp');
+  const customInp  = document.getElementById('edit-custom-dns-input');
+  const DNS_MAP = {
+    pihole:     '10.8.0.1',
+    cloudflare: '1.1.1.1, 1.0.0.1',
+    google:     '8.8.8.8, 8.8.4.4',
+    quad9:      '9.9.9.9',
+  };
+  if (dnsPreset && dnsHidden) {
+    function syncDns() {
+      const v = dnsPreset.value;
+      if (customGrp) customGrp.style.display = v === 'custom' ? '' : 'none';
+      if (v === 'custom') {
+        dnsHidden.value = customInp ? customInp.value.trim() : '';
+      } else {
+        dnsHidden.value = DNS_MAP[v] || '';
+      }
+    }
+    dnsPreset.addEventListener('change', syncDns);
+    if (customInp) customInp.addEventListener('input', () => {
+      if (dnsPreset.value === 'custom') dnsHidden.value = customInp.value.trim();
+    });
+  }
+})();
+
 /* ── Kill button ───────────────────────────────────────────────────── */
 (function () {
   const btn = document.getElementById('kill-btn');

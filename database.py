@@ -74,6 +74,9 @@ def migrate_db():
             ('geo_country_code',       "TEXT"),
             ('geo_failed_at',          "TEXT"),
             ('use_pihole',             "INTEGER NOT NULL DEFAULT 1"),
+            ('tunnel_mode',            "TEXT NOT NULL DEFAULT 'full'"),
+            ('custom_routes',          "TEXT NOT NULL DEFAULT ''"),
+            ('dns_override',           "TEXT NOT NULL DEFAULT ''"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE peers ADD COLUMN {col} {definition}")
@@ -144,6 +147,20 @@ def migrate_db():
         """)
 
         conn.execute("""
+            CREATE TABLE IF NOT EXISTS port_forwards (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                peer_id       INTEGER NOT NULL,
+                description   TEXT    NOT NULL DEFAULT '',
+                protocol      TEXT    NOT NULL DEFAULT 'tcp',
+                external_port INTEGER NOT NULL,
+                internal_port INTEGER NOT NULL,
+                enabled       INTEGER NOT NULL DEFAULT 1,
+                created_at    TEXT    NOT NULL,
+                FOREIGN KEY (peer_id) REFERENCES peers(id) ON DELETE CASCADE
+            )
+        """)
+
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS speedtest_results (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
                 download_mbps REAL    NOT NULL,
@@ -180,17 +197,19 @@ def get_peer_by_name(name):
 
 
 def create_peer(name, private_key, public_key, preshared_key,
-                vpn_ip, dns, endpoint, allowed_ips='0.0.0.0/0'):
+                vpn_ip, dns, endpoint, allowed_ips='0.0.0.0/0',
+                tunnel_mode='full', custom_routes=''):
     from datetime import datetime
     now = datetime.utcnow().isoformat()
     with get_db() as conn:
         conn.execute("""
             INSERT INTO peers
               (name, private_key, public_key, preshared_key, vpn_ip,
-               allowed_ips, dns, endpoint, enabled, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+               allowed_ips, dns, endpoint, enabled, created_at, updated_at,
+               tunnel_mode, custom_routes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
         """, (name, private_key, public_key, preshared_key, vpn_ip,
-              allowed_ips, dns, endpoint, now, now))
+              allowed_ips, dns, endpoint, now, now, tunnel_mode, custom_routes))
         row = conn.execute("SELECT last_insert_rowid() AS id").fetchone()
         return row['id']
 
@@ -213,6 +232,26 @@ def update_peer_notes(peer_id, notes, device):
         conn.execute(
             "UPDATE peers SET notes = ?, device = ?, updated_at = ? WHERE id = ?",
             (notes, device, now, peer_id)
+        )
+
+
+def update_peer_tunnel(peer_id, tunnel_mode, custom_routes=''):
+    from datetime import datetime
+    now = datetime.utcnow().isoformat()
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE peers SET tunnel_mode = ?, custom_routes = ?, updated_at = ? WHERE id = ?",
+            (tunnel_mode, custom_routes or '', now, peer_id)
+        )
+
+
+def update_peer_dns_override(peer_id, dns_override):
+    from datetime import datetime
+    now = datetime.utcnow().isoformat()
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE peers SET dns_override = ?, updated_at = ? WHERE id = ?",
+            (dns_override or '', now, peer_id)
         )
 
 
@@ -602,3 +641,62 @@ def get_last_speedtest():
             "SELECT * FROM speedtest_results ORDER BY tested_at DESC LIMIT 1"
         ).fetchone()
     return dict(row) if row else None
+
+
+# ── Port forwards ─────────────────────────────────────────────────────────────
+
+def get_port_forwards(peer_id=None):
+    with get_db() as conn:
+        if peer_id is not None:
+            rows = conn.execute("""
+                SELECT pf.*, p.vpn_ip AS peer_vpn_ip, p.name AS peer_name
+                  FROM port_forwards pf
+                  JOIN peers p ON p.id = pf.peer_id
+                 WHERE pf.peer_id = ?
+                 ORDER BY pf.created_at DESC
+            """, (peer_id,)).fetchall()
+        else:
+            rows = conn.execute("""
+                SELECT pf.*, p.vpn_ip AS peer_vpn_ip, p.name AS peer_name
+                  FROM port_forwards pf
+                  JOIN peers p ON p.id = pf.peer_id
+                 ORDER BY pf.created_at DESC
+            """).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_port_forward(rule_id):
+    with get_db() as conn:
+        row = conn.execute("""
+            SELECT pf.*, p.vpn_ip AS peer_vpn_ip, p.name AS peer_name
+              FROM port_forwards pf
+              JOIN peers p ON p.id = pf.peer_id
+             WHERE pf.id = ?
+        """, (rule_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def create_port_forward(peer_id, description, protocol, external_port, internal_port):
+    from datetime import datetime
+    now = datetime.utcnow().isoformat()
+    with get_db() as conn:
+        conn.execute("""
+            INSERT INTO port_forwards
+              (peer_id, description, protocol, external_port, internal_port, enabled, created_at)
+            VALUES (?, ?, ?, ?, ?, 1, ?)
+        """, (peer_id, description or '', protocol, external_port, internal_port, now))
+        row = conn.execute("SELECT last_insert_rowid() AS id").fetchone()
+        return row['id']
+
+
+def set_port_forward_enabled(rule_id, enabled):
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE port_forwards SET enabled = ? WHERE id = ?",
+            (1 if enabled else 0, rule_id)
+        )
+
+
+def delete_port_forward(rule_id):
+    with get_db() as conn:
+        conn.execute("DELETE FROM port_forwards WHERE id = ?", (rule_id,))

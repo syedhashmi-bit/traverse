@@ -39,8 +39,16 @@
           <span class="text-muted">VPS Server</span>
         </div>
         <div style="display:flex; align-items:center; gap:10px; font-size:0.82rem;">
-          <div style="width:12px;height:12px;border-radius:50%;background:var(--success);box-shadow:0 0 6px var(--success);flex-shrink:0;"></div>
-          <span class="text-muted">Active — handshake &lt; 3 min</span>
+          <div style="width:12px;height:12px;border-radius:50%;background:#10b981;box-shadow:0 0 6px #10b981;flex-shrink:0;"></div>
+          <span class="text-muted">Active — Full Tunnel</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; font-size:0.82rem;">
+          <div style="width:12px;height:12px;border-radius:50%;background:#22d3ee;box-shadow:0 0 6px #22d3ee;flex-shrink:0;"></div>
+          <span class="text-muted">Active — VPN Only</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; font-size:0.82rem;">
+          <div style="width:12px;height:12px;border-radius:50%;background:#fbbf24;box-shadow:0 0 6px #fbbf24;flex-shrink:0;"></div>
+          <span class="text-muted">Active — Split Tunnel</span>
         </div>
         <div style="display:flex; align-items:center; gap:10px; font-size:0.82rem;">
           <div style="width:12px;height:12px;border-radius:50%;background:var(--text-dim);flex-shrink:0;"></div>
@@ -72,10 +80,11 @@
           <th>Real IP</th>
           <th>Last Seen</th>
           <th>Status</th>
+          <th>Tunnel</th>
         </tr>
       </thead>
       <tbody id="loc-tbody">
-        <tr><td colspan="7" class="text-dim text-sm" style="padding:16px;">Loading…</td></tr>
+        <tr><td colspan="8" class="text-dim text-sm" style="padding:16px;">Loading…</td></tr>
       </tbody>
     </table>
   </div>
@@ -121,10 +130,18 @@
     });
   }
 
-  function activeIcon() {
+  const TUNNEL_COLOUR = {
+    full:     '#10b981',
+    vpn_only: '#22d3ee',
+    split:    '#fbbf24',
+  };
+  function tunnelColour(tm) { return TUNNEL_COLOUR[tm] || TUNNEL_COLOUR.full; }
+
+  function activeIcon(tunnelMode) {
+    const c = tunnelColour(tunnelMode);
     return L.divIcon({
       className: '',
-      html: '<div style="width:16px;height:16px;border-radius:50%;background:#10b981;box-shadow:0 0 8px #10b981;border:2px solid #fff;"></div>',
+      html: `<div style="width:16px;height:16px;border-radius:50%;background:${c};box-shadow:0 0 8px ${c};border:2px solid #fff;"></div>`,
       iconSize: [16, 16], iconAnchor: [8, 8],
     });
   }
@@ -157,7 +174,7 @@
       if (p.active && p.lat !== null && p.lon !== null) {
         polylines.push(
           L.polyline([serverLatLng, [p.lat, p.lon]], {
-            color: '#10b981', weight: 1.5, opacity: 0.45, dashArray: '5, 5',
+            color: tunnelColour(p.tunnel_mode), weight: 1.5, opacity: 0.45, dashArray: '5, 5',
           }).addTo(map)
         );
       }
@@ -181,9 +198,13 @@
     </div>`;
   }
 
+  const TUNNEL_LABEL = { full: 'Full Tunnel', vpn_only: 'VPN Only', split: 'Split Tunnel' };
+
   function buildPeerPopup(p) {
     const flag = countryFlag(p.country_code);
     const loc  = p.city ? `${flag} ${p.city}, ${p.country}` : (p.country ? `${flag} ${p.country}` : '');
+    const tc   = tunnelColour(p.tunnel_mode);
+    const tl   = TUNNEL_LABEL[p.tunnel_mode] || 'Full Tunnel';
     return `<div style="font-family:Inter,sans-serif;font-size:13px;min-width:180px;">
       <div style="font-weight:700;font-size:14px;margin-bottom:6px;">${p.name}</div>
       <div style="color:#aaa;margin-bottom:2px;">VPN IP: <b style="color:#e2e8f0">${p.vpn_ip}</b></div>
@@ -191,11 +212,15 @@
       ${loc ? `<div style="color:#aaa;margin-bottom:2px;">Location: <b style="color:#e2e8f0">${loc}</b></div>` : ''}
       <div style="color:#aaa;margin-bottom:2px;">Last handshake: <b style="color:#e2e8f0">${p.last_handshake}</b></div>
       <div style="color:#aaa;margin-bottom:2px;">RX: <b style="color:#3b82f6">${p.rx_fmt}</b> &nbsp;TX: <b style="color:#7c6af7">${p.tx_fmt}</b></div>
-      <div style="margin-top:6px;">
+      <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
         <span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;
               background:${p.active ? 'rgba(16,185,129,0.15)' : 'rgba(90,98,120,0.2)'};
               color:${p.active ? '#10b981' : '#8892a4'};">
           ${p.active ? '● active' : '○ inactive'}
+        </span>
+        <span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;
+              background:rgba(255,255,255,0.06);color:${tc};">
+          ${tl}
         </span>
       </div>
     </div>`;
@@ -222,10 +247,10 @@
                  : hasLoc  ? (p.country ? `${flag} ${p.country}` : 'Located')
                  : p.real_ip !== 'unknown' ? 'No location data'
                  : 'Never connected';
+    const dotColor = p.active ? tunnelColour(p.tunnel_mode) : 'var(--text-dim)';
+    const dotGlow  = p.active ? `box-shadow:0 0 5px ${dotColor};` : '';
     return `<div class="peer-row" data-name="${p.name}" style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);cursor:${hasLoc ? 'pointer' : 'default'};">
-      <div style="width:10px;height:10px;border-radius:50%;flex-shrink:0;
-           background:${p.active ? 'var(--success)' : 'var(--text-dim)'};
-           ${p.active ? 'box-shadow:0 0 5px var(--success);' : ''}"></div>
+      <div style="width:10px;height:10px;border-radius:50%;flex-shrink:0;background:${dotColor};${dotGlow}"></div>
       <div style="flex:1;min-width:0;">
         <div style="font-size:0.85rem;font-weight:550;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.name}</div>
         <div style="font-size:0.72rem;color:var(--text-muted);">${loc}</div>
@@ -299,7 +324,7 @@
         const seen = new Set();
         withLoc.forEach(p => {
           seen.add(p.name);
-          const icon = p.active ? activeIcon() : inactiveIcon();
+          const icon = p.active ? activeIcon(p.tunnel_mode) : inactiveIcon();
           if (peerMarkers[p.name]) {
             peerMarkers[p.name].setLatLng([p.lat, p.lon]).setIcon(icon).setPopupContent(buildPeerPopup(p));
           } else {
@@ -323,10 +348,12 @@
         if (tableUpdated) tableUpdated.textContent = 'Updated ' + new Date().toLocaleTimeString([], {hour12:false});
         if (tbody) {
           if (peers.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" class="text-dim text-sm" style="padding:16px;">No peers.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="text-dim text-sm" style="padding:16px;">No peers.</td></tr>';
           } else {
             tbody.innerHTML = peers.map(p => {
               const flag = countryFlag(p.country_code);
+              const tc   = tunnelColour(p.tunnel_mode);
+              const tl   = TUNNEL_LABEL[p.tunnel_mode] || 'Full';
               return `<tr>
                 <td><a href="/peers/${p.peer_id}" style="color:var(--accent);text-decoration:none;font-weight:550;">${p.name}</a></td>
                 <td class="text-muted">${p.country ? flag + ' ' + p.country : '—'}</td>
@@ -335,11 +362,12 @@
                 <td class="td-mono text-dim">${p.real_ip !== 'unknown' ? p.real_ip : '—'}</td>
                 <td class="text-sm text-muted">${p.last_handshake}</td>
                 <td>${p.active
-                  ? '<span class="badge badge-success">● active</span>'
+                  ? `<span class="badge" style="background:rgba(16,185,129,.15);color:#10b981;border:1px solid rgba(16,185,129,.3);">● active</span>`
                   : (p.enabled
                       ? '<span class="badge badge-muted">○ inactive</span>'
                       : '<span class="badge badge-muted">disabled</span>')
                 }</td>
+                <td><span style="font-size:0.75rem;color:${tc};font-weight:600;">${tl}</span></td>
               </tr>`;
             }).join('');
           }

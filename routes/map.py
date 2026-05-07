@@ -159,6 +159,7 @@ def peer_locations():
             'last_handshake': format_handshake(last_hs),
             'rx_fmt':         format_bytes(live_info.get('rx_bytes') or peer.get('rx_bytes') or 0),
             'tx_fmt':         format_bytes(live_info.get('tx_bytes') or peer.get('tx_bytes') or 0),
+            'tunnel_mode':    peer.get('tunnel_mode') or 'full',
         }
 
         if ip:

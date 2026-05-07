@@ -1,0 +1,174 @@
+{% extends 'base.html' %}
+{% block title %}Port Forwards{% endblock %}
+{% block page_title %}Port Forwards{% endblock %}
+
+{% block content %}
+<div class="section-header mb-16">
+  <div>
+    <div class="section-title">Port Forwards</div>
+    <div class="section-sub">DNAT rules that forward public ports to VPN peers.</div>
+  </div>
+  {% if peers %}
+  <button type="button" class="btn btn-primary" onclick="document.getElementById('pf-add-modal').style.display='flex'">
+    + Add Rule
+  </button>
+  {% endif %}
+</div>
+
+<!-- Security notice -->
+<div class="card mb-16" style="border-color:rgba(251,191,36,.4);">
+  <div class="card-body text-sm" style="color:var(--warning); display:flex; align-items:flex-start; gap:10px;">
+    <span style="font-size:1.2rem; flex-shrink:0;">⚠</span>
+    <div>
+      Port forwarding exposes services on peer devices directly to the public internet.
+      Ensure the target service is secured and only forward ports you intentionally mean to expose.
+      Rules are applied with <code>iptables</code> and persisted to <code>/etc/iptables/rules.v4</code>.
+    </div>
+  </div>
+</div>
+
+{% if rules %}
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Peer</th>
+        <th>Description</th>
+        <th>Proto</th>
+        <th>External</th>
+        <th>Internal</th>
+        <th>Status</th>
+        <th>Created</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rules %}
+      <tr>
+        <td class="td-mono text-dim">{{ r.id }}</td>
+        <td>
+          <a href="{{ url_for('peers.detail', peer_id=r.peer_id) }}"
+             style="color:var(--accent); text-decoration:none;">{{ r.peer_name }}</a>
+          <div class="td-mono text-xs text-dim">{{ r.peer_vpn_ip }}</div>
+        </td>
+        <td class="text-sm">{{ r.description or '—' }}</td>
+        <td><span class="badge badge-muted">{{ r.protocol|upper }}</span></td>
+        <td class="td-mono">:{{ r.external_port }}</td>
+        <td class="td-mono">{{ r.peer_vpn_ip }}:{{ r.internal_port }}</td>
+        <td>
+          {% if r.enabled %}
+            <span class="badge badge-success">● active</span>
+          {% else %}
+            <span class="badge badge-muted">○ disabled</span>
+          {% endif %}
+        </td>
+        <td class="text-xs text-dim">{{ r.created_at[:10] }}</td>
+        <td>
+          <div class="action-bar">
+            <form method="POST" action="{{ url_for('port_forwards.toggle', rule_id=r.id) }}" style="display:inline;">
+              <button type="submit" class="btn btn-secondary btn-sm">
+                {{ '○ Disable' if r.enabled else '● Enable' }}
+              </button>
+            </form>
+            <form method="POST" action="{{ url_for('port_forwards.delete', rule_id=r.id) }}" style="display:inline;"
+                  data-confirm="Delete this port forward? The iptables rule will be removed.">
+              <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% elif peers %}
+<div class="card">
+  <div class="empty-state-friendly">
+    <div class="empty-state-icon-lg">⇄</div>
+    <div class="empty-state-heading">No port forwards</div>
+    <div class="empty-state-sub">Create a rule to expose a peer service to the public internet.</div>
+    <button type="button" class="btn btn-primary btn-lg" style="margin-top:18px;"
+            onclick="document.getElementById('pf-add-modal').style.display='flex'">
+      + Add Rule
+    </button>
+  </div>
+</div>
+{% else %}
+<div class="card">
+  <div class="empty-state-friendly">
+    <div class="empty-state-icon-lg">◈</div>
+    <div class="empty-state-heading">No peers yet</div>
+    <div class="empty-state-sub">Add a peer first before creating port forwards.</div>
+    <a href="{{ url_for('peers.create') }}" class="btn btn-primary btn-lg" style="margin-top:18px;">
+      + Add Peer
+    </a>
+  </div>
+</div>
+{% endif %}
+
+<!-- Add Rule Modal -->
+<div id="pf-add-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6);
+     z-index:500; align-items:center; justify-content:center; backdrop-filter:blur(3px);">
+  <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg);
+              padding:28px; max-width:480px; width:90%; margin:0 16px;">
+    <div style="font-size:1rem; font-weight:700; color:var(--text); margin-bottom:18px;">Add Port Forward</div>
+    <form method="POST" action="{{ url_for('port_forwards.create') }}">
+      <div class="form-group">
+        <label class="form-label">Peer</label>
+        <select class="form-select" name="peer_id" required>
+          <option value="">— select peer —</option>
+          {% for p in peers %}
+          <option value="{{ p.id }}">{{ p.name }} ({{ p.vpn_ip }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Protocol</label>
+          <select class="form-select" name="protocol">
+            <option value="tcp">TCP</option>
+            <option value="udp">UDP</option>
+            <option value="both">TCP + UDP</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">External Port</label>
+          <input class="form-input" type="number" name="external_port"
+                 min="1" max="65535" placeholder="e.g. 8080" required>
+          <div class="form-hint">Public-facing port on the VPS.</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Internal Port</label>
+        <input class="form-input" type="number" name="internal_port"
+               min="1" max="65535" placeholder="e.g. 80" required>
+        <div class="form-hint">Port the service listens on inside the peer.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description <span class="text-dim">(optional)</span></label>
+        <input class="form-input" type="text" name="description"
+               placeholder="e.g. Nginx web server">
+      </div>
+      <div class="action-bar" style="margin-top:18px;">
+        <button type="submit" class="btn btn-primary">Create Rule</button>
+        <button type="button" class="btn btn-secondary"
+                onclick="document.getElementById('pf-add-modal').style.display='none'">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('pf-add-modal').addEventListener('click', function(e) {
+  if (e.target === this) this.style.display = 'none';
+});
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    document.getElementById('pf-add-modal').style.display = 'none';
+  }
+});
+</script>
+{% endblock %}
