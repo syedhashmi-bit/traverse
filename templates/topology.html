@@ -6,182 +6,386 @@
 <div class="section-header mb-16">
   <div>
     <div class="section-title">Network Topology</div>
-    <div class="section-sub">VPN peer connectivity diagram — click a node to open peer detail</div>
+    <div class="section-sub">Click a peer node to open its detail page</div>
   </div>
 </div>
 
-<div class="card" style="padding:0; overflow:hidden;">
-  <canvas id="topo-canvas" style="display:block; width:100%; cursor:pointer;"></canvas>
-</div>
+<!-- Canvas card fills remaining viewport height -->
+<div class="card" style="padding:0; overflow:hidden; position:relative;
+     height:calc(100vh - 170px); min-height:420px;">
 
-<div style="margin-top:10px; display:flex; gap:16px; flex-wrap:wrap; font-family:var(--mono); font-size:11px; color:var(--text-muted);">
-  <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#f59e0b; margin-right:5px; vertical-align:middle;"></span>Server</span>
-  <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#10b981; margin-right:5px; vertical-align:middle;"></span>Active peer</span>
-  <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#5a6278; margin-right:5px; vertical-align:middle;"></span>Inactive peer</span>
-  <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#ef4444; margin-right:5px; vertical-align:middle;"></span>Disabled peer</span>
+  <canvas id="topo-canvas" style="display:block; width:100%; height:100%; cursor:default;"></canvas>
+
+  <!-- Legend — top-right corner inside the card -->
+  <div id="topo-legend" style="position:absolute; top:14px; right:14px;
+       background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius);
+       padding:10px 14px; font-size:0.72rem; color:var(--text-muted);
+       display:flex; flex-direction:column; gap:7px; pointer-events:none;">
+    <div style="font-weight:600; color:var(--text); margin-bottom:2px; font-size:0.73rem;">Legend</div>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <div style="width:10px;height:10px;border-radius:50%;background:#f59e0b;box-shadow:0 0 5px #f59e0b;flex-shrink:0;"></div>
+      <span>Server</span>
+    </div>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <div style="width:10px;height:10px;border-radius:50%;background:#10b981;box-shadow:0 0 5px #10b981;flex-shrink:0;"></div>
+      <span>Active — Full Tunnel</span>
+    </div>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <div style="width:10px;height:10px;border-radius:50%;background:#22d3ee;box-shadow:0 0 5px #22d3ee;flex-shrink:0;"></div>
+      <span>Active — VPN Only</span>
+    </div>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <div style="width:10px;height:10px;border-radius:50%;background:#fbbf24;box-shadow:0 0 5px #fbbf24;flex-shrink:0;"></div>
+      <span>Active — Split</span>
+    </div>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <div style="width:10px;height:10px;border-radius:50%;background:#5a6278;flex-shrink:0;"></div>
+      <span>Inactive</span>
+    </div>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <div style="width:10px;height:10px;border-radius:50%;background:#ef4444;flex-shrink:0;"></div>
+      <span>Disabled</span>
+    </div>
+  </div>
+
+  <!-- Hover tooltip -->
+  <div id="topo-tooltip" style="position:absolute; pointer-events:none; display:none;
+       background:var(--surface-3); border:1px solid var(--border); border-radius:var(--radius);
+       padding:10px 13px; font-size:0.78rem; color:var(--text); max-width:220px;
+       box-shadow:0 4px 16px rgba(0,0,0,0.4); z-index:10; line-height:1.6;"></div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
 (function () {
-  const canvas = document.getElementById('topo-canvas');
-  const ctx    = canvas.getContext('2d');
-  let nodes = [], W = 0, H = 0, clickables = [];
+  const canvas  = document.getElementById('topo-canvas');
+  const ctx     = canvas.getContext('2d');
+  const tooltip = document.getElementById('topo-tooltip');
+  const card    = canvas.parentElement;
 
-  const COL_SERVER   = '#f59e0b';
-  const COL_ACTIVE   = '#10b981';
-  const COL_INACTIVE = '#5a6278';
-  const COL_DISABLED = '#ef4444';
-  const COL_LINE     = 'rgba(90,98,120,0.35)';
-  const COL_LINE_ACT = 'rgba(16,185,129,0.4)';
+  let nodes      = [];
+  let endpoint   = '';
+  let W = 0, H = 0;
+  let clickables = [];
+  let hoverIdx   = -1;    // index into clickables of hovered node, or -1
+  let dashOffset = 0;
+  let rafId      = null;
 
+  /* ── Colours ─────────────────────────────────────────────────────── */
+  const C_SERVER   = '#f59e0b';
+  const C_INACTIVE = '#5a6278';
+  const C_DISABLED = '#ef4444';
+  const C_TUNNEL   = { full: '#10b981', vpn_only: '#22d3ee', split: '#fbbf24' };
+  function peerColor(n) {
+    if (!n.enabled) return C_DISABLED;
+    if (!n.active)  return C_INACTIVE;
+    return C_TUNNEL[n.tunnel_mode] || C_TUNNEL.full;
+  }
+
+  /* ── Canvas sizing ───────────────────────────────────────────────── */
   function resize() {
-    const rect = canvas.parentElement.getBoundingClientRect();
-    W = Math.max(rect.width || 600, 400);
-    H = Math.max(Math.min(W * 0.55, 520), 280);
+    const rect = card.getBoundingClientRect();
+    W = Math.max(rect.width  || 600, 400);
+    H = Math.max(rect.height || 500, 420);
     canvas.width  = W;
     canvas.height = H;
-    draw();
   }
 
-  function nodeColor(n) {
-    if (!n.enabled) return COL_DISABLED;
-    if (n.active)   return COL_ACTIVE;
-    return COL_INACTIVE;
-  }
-
-  function draw() {
-    ctx.clearRect(0, 0, W, H);
-
+  /* ── Compute node positions ──────────────────────────────────────── */
+  function layoutNodes() {
     const cx = W / 2, cy = H / 2;
-    const R  = Math.min(W, H) * 0.36;
+    const R  = Math.min(W, H) * 0.35;
+    const n  = nodes.length;
+    nodes.forEach((nd, i) => {
+      let angle;
+      if (n === 1) {
+        angle = 0;                          // single peer to the right
+      } else if (n === 2) {
+        angle = i === 0 ? -Math.PI / 2 : Math.PI / 2; // top / bottom... actually left/right
+        angle = i === 0 ? Math.PI : 0;     // left and right
+      } else {
+        angle = -Math.PI / 2 + (2 * Math.PI * i) / n;
+      }
+      nd._x = cx + R * Math.cos(angle);
+      nd._y = cy + R * Math.sin(angle);
+    });
+    return { cx, cy };
+  }
 
+  /* ── Draw one frame ──────────────────────────────────────────────── */
+  function drawFrame() {
+    ctx.clearRect(0, 0, W, H);
     if (nodes.length === 0) {
-      ctx.fillStyle = 'rgba(90,98,120,0.5)';
-      ctx.font = '14px var(--mono, monospace)';
+      ctx.fillStyle = C_INACTIVE;
+      ctx.font = '13px var(--mono, monospace)';
       ctx.textAlign = 'center';
-      ctx.fillText('No peers configured', cx, cy);
+      ctx.textBaseline = 'middle';
+      ctx.fillText('No peers configured', W / 2, H / 2);
       return;
     }
 
+    const { cx, cy } = layoutNodes();
     clickables = [];
 
-    const angleStep = (2 * Math.PI) / nodes.length;
-
-    nodes.forEach((n, i) => {
-      const angle = -Math.PI / 2 + i * angleStep;
-      n._x = cx + R * Math.cos(angle);
-      n._y = cy + R * Math.sin(angle);
-    });
-
-    // Draw lines
+    /* Lines server → peers */
     nodes.forEach(n => {
+      const col = peerColor(n);
       ctx.beginPath();
       ctx.moveTo(cx, cy);
       ctx.lineTo(n._x, n._y);
-      ctx.strokeStyle = n.active ? COL_LINE_ACT : COL_LINE;
-      ctx.lineWidth   = n.active ? 1.5 : 1;
-      ctx.setLineDash(n.active ? [] : [4, 4]);
+      if (n.active) {
+        ctx.setLineDash([8, 6]);
+        ctx.lineDashOffset = dashOffset;
+        ctx.strokeStyle = col;
+        ctx.lineWidth   = 1.5;
+        ctx.globalAlpha = 0.5;
+      } else if (!n.enabled) {
+        ctx.setLineDash([3, 6]);
+        ctx.lineDashOffset = 0;
+        ctx.strokeStyle = C_DISABLED;
+        ctx.lineWidth   = 1;
+        ctx.globalAlpha = 0.15;
+      } else {
+        ctx.setLineDash([4, 5]);
+        ctx.lineDashOffset = 0;
+        ctx.strokeStyle = C_INACTIVE;
+        ctx.lineWidth   = 1;
+        ctx.globalAlpha = 0.25;
+      }
       ctx.stroke();
       ctx.setLineDash([]);
+      ctx.lineDashOffset = 0;
+      ctx.globalAlpha = 1;
     });
 
-    // Draw server node
-    const sR = 28;
+    /* Server node */
+    const sR = 32;
     ctx.beginPath();
     ctx.arc(cx, cy, sR, 0, 2 * Math.PI);
-    ctx.fillStyle   = 'rgba(245,158,11,0.15)';
+    ctx.fillStyle   = 'rgba(245,158,11,0.12)';
     ctx.fill();
-    ctx.strokeStyle = COL_SERVER;
-    ctx.lineWidth   = 2;
+    ctx.strokeStyle = C_SERVER;
+    ctx.lineWidth   = 2.5;
     ctx.stroke();
-    ctx.font        = '17px serif';
-    ctx.textAlign   = 'center';
+
+    // Outer glow ring
+    ctx.beginPath();
+    ctx.arc(cx, cy, sR + 5, 0, 2 * Math.PI);
+    ctx.strokeStyle = 'rgba(245,158,11,0.18)';
+    ctx.lineWidth   = 3;
+    ctx.stroke();
+
+    ctx.font         = 'bold 10px var(--mono, monospace)';
+    ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle   = COL_SERVER;
-    ctx.fillText('⬡', cx, cy);
-    ctx.font        = 'bold 10px var(--mono, monospace)';
-    ctx.fillStyle   = '#f59e0b';
-    ctx.fillText('SERVER', cx, cy + sR + 13);
+    ctx.fillStyle    = C_SERVER;
+    ctx.fillText('SERVER', cx, cy - 1);
 
-    // Draw peer nodes
-    nodes.forEach(n => {
-      const pR  = 22;
-      const col = nodeColor(n);
+    ctx.font      = '9px var(--mono, monospace)';
+    ctx.fillStyle = 'rgba(245,158,11,0.6)';
+    const ep = endpoint.length > 20 ? endpoint.slice(0, 18) + '…' : endpoint;
+    ctx.fillText(ep, cx, cy + sR + 14);
 
-      ctx.beginPath();
-      ctx.arc(n._x, n._y, pR, 0, 2 * Math.PI);
-      ctx.fillStyle   = col.replace(')', ',0.15)').replace('rgb', 'rgba').replace('#', '');
-      // simpler fill approach:
-      ctx.fillStyle   = col + '28';
-      ctx.fill();
-      ctx.strokeStyle = col;
-      ctx.lineWidth   = n.active ? 2 : 1.5;
-      ctx.stroke();
+    clickables.push({ x: cx, y: cy, r: sR + 8, type: 'server', url: null });
 
-      // glow for active
+    /* Peer nodes */
+    nodes.forEach((n, i) => {
+      const pR    = 24;
+      const col   = peerColor(n);
+      const hover = hoverIdx === i + 1;  // +1 because server is index 0
+
+      // Outer glow ring (active peers)
       if (n.active) {
         ctx.beginPath();
-        ctx.arc(n._x, n._y, pR + 4, 0, 2 * Math.PI);
-        ctx.strokeStyle = col + '40';
-        ctx.lineWidth   = 3;
+        ctx.arc(n._x, n._y, pR + (hover ? 9 : 6), 0, 2 * Math.PI);
+        ctx.strokeStyle = col.replace('#', '');
+        ctx.strokeStyle = col;
+        ctx.lineWidth   = hover ? 4 : 3;
+        ctx.globalAlpha = hover ? 0.4 : 0.22;
         ctx.stroke();
+        ctx.globalAlpha = 1;
       }
 
+      // Node fill
+      ctx.beginPath();
+      ctx.arc(n._x, n._y, pR, 0, 2 * Math.PI);
+      const r = parseInt(col.slice(1,3),16), g = parseInt(col.slice(3,5),16), b = parseInt(col.slice(5,7),16);
+      ctx.fillStyle   = `rgba(${r},${g},${b},0.13)`;
+      ctx.fill();
+      ctx.strokeStyle = col;
+      ctx.lineWidth   = hover ? 2.5 : (n.active ? 2 : 1.5);
+      ctx.stroke();
+
+      // Device emoji / icon
       ctx.font         = '14px serif';
       ctx.textAlign    = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle    = col;
+      ctx.globalAlpha  = n.enabled ? 1 : 0.5;
       ctx.fillText(n.icon, n._x, n._y);
+      ctx.globalAlpha  = 1;
 
-      const maxW = 80;
+      // Peer name below
+      const nameStr = n.name.length > 11 ? n.name.slice(0, 10) + '…' : n.name;
       ctx.font      = 'bold 10px var(--mono, monospace)';
       ctx.fillStyle = col;
-      ctx.fillText(n.name.length > 10 ? n.name.slice(0, 9) + '…' : n.name, n._x, n._y + pR + 11);
+      ctx.globalAlpha = n.enabled ? 1 : 0.5;
+      ctx.fillText(nameStr, n._x, n._y + pR + 11);
+
+      // VPN IP
       ctx.font      = '9px var(--mono, monospace)';
-      ctx.fillStyle = 'rgba(90,98,120,0.8)';
+      ctx.fillStyle = 'rgba(136,146,164,0.8)';
       ctx.fillText(n.vpn_ip, n._x, n._y + pR + 22);
 
-      clickables.push({ x: n._x, y: n._y, r: pR + 8, url: n.url });
+      // Tunnel mode badge text
+      const tmLabels = { full: 'FULL', vpn_only: 'VPN', split: 'SPLIT' };
+      const tmStr    = n.active ? (tmLabels[n.tunnel_mode] || 'FULL') : '';
+      if (tmStr) {
+        ctx.font      = '8px var(--mono, monospace)';
+        ctx.fillStyle = col;
+        ctx.globalAlpha = 0.7;
+        ctx.fillText(tmStr, n._x, n._y + pR + 32);
+      }
+      ctx.globalAlpha = 1;
+
+      clickables.push({ x: n._x, y: n._y, r: pR + 10, type: 'peer', idx: i, url: n.url, node: n });
     });
   }
 
-  canvas.addEventListener('click', function (e) {
-    const rect = canvas.getBoundingClientRect();
-    const mx   = (e.clientX - rect.left) * (canvas.width / rect.width);
-    const my   = (e.clientY - rect.top)  * (canvas.height / rect.height);
-    for (const c of clickables) {
-      const dx = mx - c.x, dy = my - c.y;
-      if (dx*dx + dy*dy <= c.r*c.r) {
-        window.location.href = c.url;
-        return;
+  /* ── RAF loop (only when active peers exist) ─────────────────────── */
+  function startLoop() {
+    if (rafId !== null) return;
+    function tick() {
+      dashOffset -= 0.5;
+      drawFrame();
+      const hasActive = nodes.some(n => n.active);
+      if (hasActive) {
+        rafId = requestAnimationFrame(tick);
+      } else {
+        rafId = null;
       }
+    }
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function stopLoop() {
+    if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+  }
+
+  function draw() {
+    stopLoop();
+    const hasActive = nodes.some(n => n.active);
+    if (hasActive) {
+      startLoop();
+    } else {
+      drawFrame();
+    }
+  }
+
+  /* ── Tooltip ─────────────────────────────────────────────────────── */
+  function showTooltip(e, c) {
+    const cardRect = card.getBoundingClientRect();
+    let html = '';
+    if (c.type === 'server') {
+      html = `<div style="font-weight:700;color:#f59e0b;margin-bottom:4px;">★ VPS Server</div>
+              <div>Endpoint: <span style="color:var(--text);">${endpoint || '—'}</span></div>`;
+    } else {
+      const n   = c.node;
+      const col = peerColor(n);
+      const st  = n.active ? `<span style="color:${col};">● active</span>`
+                : (!n.enabled ? '<span style="color:#ef4444;">○ disabled</span>'
+                : '<span style="color:#5a6278;">○ inactive</span>');
+      html = `<div style="font-weight:700;color:var(--text);margin-bottom:4px;">${n.name}</div>
+              <div>VPN IP: <span style="color:var(--accent);">${n.vpn_ip}</span></div>
+              <div>Status: ${st}</div>
+              <div>Last seen: <span style="color:var(--text-muted);">${n.last_seen}</span></div>
+              <div>RX: <span style="color:#3b82f6;">${n.rx_fmt}</span> &nbsp;TX: <span style="color:#7c6af7;">${n.tx_fmt}</span></div>`;
+    }
+    tooltip.innerHTML = html;
+
+    const tx = e.clientX - cardRect.left + 14;
+    const ty = e.clientY - cardRect.top  + 14;
+    const ttW = 220, ttH = 110;
+    tooltip.style.left    = (tx + ttW > card.clientWidth  ? tx - ttW - 28 : tx) + 'px';
+    tooltip.style.top     = (ty + ttH > card.clientHeight ? ty - ttH      : ty) + 'px';
+    tooltip.style.display = 'block';
+  }
+
+  function hideTooltip() {
+    tooltip.style.display = 'none';
+  }
+
+  /* ── Mouse events ────────────────────────────────────────────────── */
+  function canvasCoords(e) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      mx: (e.clientX - rect.left) * (canvas.width  / rect.width),
+      my: (e.clientY - rect.top)  * (canvas.height / rect.height),
+    };
+  }
+
+  function hitTest(mx, my) {
+    for (let i = 0; i < clickables.length; i++) {
+      const c = clickables[i];
+      const dx = mx - c.x, dy = my - c.y;
+      if (dx*dx + dy*dy <= c.r*c.r) return i;
+    }
+    return -1;
+  }
+
+  canvas.addEventListener('click', e => {
+    const { mx, my } = canvasCoords(e);
+    const i = hitTest(mx, my);
+    if (i >= 0 && clickables[i].url) {
+      window.location.href = clickables[i].url;
     }
   });
 
-  canvas.addEventListener('mousemove', function (e) {
-    const rect = canvas.getBoundingClientRect();
-    const mx   = (e.clientX - rect.left) * (canvas.width / rect.width);
-    const my   = (e.clientY - rect.top)  * (canvas.height / rect.height);
-    let hit = false;
-    for (const c of clickables) {
-      const dx = mx - c.x, dy = my - c.y;
-      if (dx*dx + dy*dy <= c.r*c.r) { hit = true; break; }
+  canvas.addEventListener('mousemove', e => {
+    const { mx, my } = canvasCoords(e);
+    const i = hitTest(mx, my);
+    const prev = hoverIdx;
+    hoverIdx = i;
+    canvas.style.cursor = (i >= 0 && clickables[i].url) ? 'pointer' : 'default';
+    if (i >= 0) {
+      showTooltip(e, clickables[i]);
+    } else {
+      hideTooltip();
     }
-    canvas.style.cursor = hit ? 'pointer' : 'default';
+    if (i !== prev && rafId === null) drawFrame(); // redraw for hover glow if not animating
   });
+
+  canvas.addEventListener('mouseleave', () => {
+    hoverIdx = -1;
+    hideTooltip();
+    if (rafId === null) drawFrame();
+  });
+
+  /* ── ResizeObserver ──────────────────────────────────────────────── */
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(() => { resize(); if (rafId === null) drawFrame(); }).observe(card);
+  } else {
+    window.addEventListener('resize', () => { resize(); if (rafId === null) drawFrame(); });
+  }
+
+  /* ── Load data ───────────────────────────────────────────────────── */
+  resize();
+  drawFrame();  // show empty state immediately while loading
 
   fetch('/api/topology')
     .then(r => r.json())
     .then(d => {
-      nodes = d.nodes || [];
+      nodes    = d.nodes    || [];
+      endpoint = d.endpoint || '';
       resize();
+      draw();
     })
-    .catch(() => resize());
-
-  window.addEventListener('resize', resize);
-  resize();
+    .catch(() => {
+      nodes = [];
+      resize();
+      drawFrame();
+    });
 })();
 </script>
 {% endblock %}
