@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.2.0] — 2026-05-07 (Batch 3 — Split Tunneling, DNS Override, Port Forwarding, Map Colours)
+
+### Added
+- **Peer tunnel mode** — three modes per peer: Full Tunnel (0.0.0.0/0), VPN Only (subnet only), Split Tunnel (subnet + custom CIDRs)
+  - New `tunnel_mode` and `custom_routes` columns on `peers` table
+  - `AllowedIPs` in client config computed from tunnel mode; server-side `wg set allowed-ips` remains `vpn_ip/32`
+  - Create form: tunnel selector + JS-revealed custom CIDR input for split mode
+  - Edit form on peer detail: tunnel mode + custom routes
+  - Peers list: FULL / VPN / SPLIT badges per peer
+  - Peer detail: Tunnel Mode row + effective AllowedIPs display
+- **DNS override per peer** — full DNS selector replacing the binary Pi-hole toggle
+  - Presets: Pi-hole (10.8.0.1), Cloudflare (1.1.1.1, 1.0.0.1), Google (8.8.8.8, 8.8.4.4), Quad9 (9.9.9.9), Custom
+  - `dns_override` column; `generate_client_config()` uses override if set, else falls back to `dns` field
+  - Selector on both create and edit forms
+- **Port forwarding rules** — DNAT iptables rules forwarding public VPS ports to VPN peers
+  - New `port_forwards` table; new blueprint at `/port-forwards/`
+  - Create, toggle, delete via `/port-forwards/<id>/toggle|delete`
+  - Rules applied with `iptables` and persisted to `/etc/iptables/rules.v4`
+  - Security warning in UI; sidebar nav link (⇄)
+  - Per-peer Port Forwards section on peer detail page
+- **Map tunnel mode colours** — active peer markers, polylines, and right-panel dots are coloured by tunnel mode
+  - Full tunnel: green; VPN only: cyan; Split: amber
+  - Legend updated with all three modes; summary table adds Tunnel column
+  - `tunnel_mode` included in `/api/peer-locations` response
+
+### Database
+- New columns on `peers`: `tunnel_mode TEXT DEFAULT 'full'`, `custom_routes TEXT DEFAULT ''`, `dns_override TEXT DEFAULT ''`
+- New table `port_forwards(id, peer_id, description, protocol, external_port, internal_port, enabled, created_at)`
+
+---
+
 ## [1.1.0] — 2026-05-07 (Batch 2 — UX & Notifications)
 
 ### Added
