@@ -48,8 +48,34 @@
         </div>
         <div class="detail-field">
           <div class="detail-label">DNS</div>
-          <div class="detail-value mono">{{ peer.dns }}</div>
+          <div class="detail-value mono">
+            {{ peer.dns }}
+            {% if pihole_enabled %}
+              {% if peer.use_pihole %}
+                <span class="badge badge-success" style="margin-left:8px; font-size:0.7rem;">Pi-hole</span>
+              {% else %}
+                <span class="badge badge-muted" style="margin-left:8px; font-size:0.7rem;">direct</span>
+              {% endif %}
+            {% endif %}
+          </div>
         </div>
+        {% if pihole_enabled %}
+        <div class="detail-field">
+          <div class="detail-label">Ad Blocking</div>
+          <div class="detail-value">
+            <form method="POST" action="{{ url_for('peers.toggle_pihole', peer_id=peer.id) }}" style="display:inline;">
+              {% if peer.use_pihole %}
+                <button type="submit" class="btn btn-warning btn-sm">⏸ Disable Pi-hole</button>
+              {% else %}
+                <button type="submit" class="btn btn-success btn-sm">▶ Enable Pi-hole</button>
+              {% endif %}
+            </form>
+            <span class="text-dim text-xs" style="margin-left:8px;">
+              {% if peer.use_pihole %}DNS routes through Pi-hole (ad blocking on){% else %}DNS bypasses Pi-hole (direct 1.1.1.1){% endif %}
+            </span>
+          </div>
+        </div>
+        {% endif %}
         <div class="detail-field">
           <div class="detail-label">Endpoint</div>
           <div class="detail-value mono">{{ peer.endpoint }}:{{ wg_port }}</div>
@@ -354,6 +380,19 @@
   </div>
 </div>
 
+{% if pihole_enabled %}
+<!-- Pi-hole DNS Query Log -->
+<div class="card mt-24" id="pihole-query-card">
+  <div class="card-header">
+    <span class="card-title">Recent DNS Queries</span>
+    <button class="btn btn-secondary btn-sm" id="ph-refresh-btn">↺ Refresh</button>
+  </div>
+  <div id="ph-queries-body">
+    <div style="padding:20px; color:var(--text-muted); font-size:0.85rem; text-align:center;">Loading…</div>
+  </div>
+</div>
+{% endif %}
+
 <!-- Danger zone -->
 <div class="danger-zone mt-24">
   <div class="danger-zone-title">Danger Zone</div>
@@ -603,5 +642,77 @@ function doPing() {
       if (lbl) lbl.textContent = 'unavailable';
     });
 })();
+
+{% if pihole_enabled %}
+/* ── Pi-hole query log ───────────────────────────────────────────────── */
+(function () {
+  const VPN_IP  = '{{ peer.vpn_ip }}';
+  const body    = document.getElementById('ph-queries-body');
+  const btn     = document.getElementById('ph-refresh-btn');
+
+  const STATUS_COLOR = {
+    'GRAVITY': 'var(--danger)',
+    'DENYLIST': 'var(--danger)',
+    'REGEX': 'var(--danger)',
+    'GRAVITY_CNAME': 'var(--danger)',
+    'REGEX_CNAME': 'var(--danger)',
+    'DENYLIST_CNAME': 'var(--danger)',
+    'FORWARDED': 'var(--success)',
+    'CACHE': 'var(--info)',
+    'CACHE_STALE': 'var(--info)',
+    'RETRIED': 'var(--text-muted)',
+    'SPECIAL_DOMAIN': 'var(--warning)',
+  };
+  function statusLabel(s) {
+    if (!s) return { label: 'unknown', color: 'var(--text-dim)' };
+    if (s.includes('GRAVITY') || s.includes('DENY') || s.includes('REGEX'))
+      return { label: 'BLOCKED', color: 'var(--danger)' };
+    if (s === 'FORWARDED')
+      return { label: 'ALLOWED', color: 'var(--success)' };
+    if (s.startsWith('CACHE'))
+      return { label: 'CACHED',  color: 'var(--info)' };
+    return { label: s, color: 'var(--text-muted)' };
+  }
+
+  function load() {
+    if (btn) { btn.disabled = true; btn.textContent = '…'; }
+    fetch('/api/pihole/peer-queries/' + encodeURIComponent(VPN_IP))
+      .then(r => r.json())
+      .then(d => {
+        if (btn) { btn.disabled = false; btn.textContent = '↺ Refresh'; }
+        if (!d.ok) {
+          body.innerHTML = '<div style="padding:16px; color:var(--text-muted); font-size:0.85rem;">Pi-hole unavailable — connect to VPN to see DNS queries.</div>';
+          return;
+        }
+        if (!d.queries || d.queries.length === 0) {
+          body.innerHTML = '<div style="padding:16px; color:var(--text-muted); font-size:0.85rem;">No queries recorded for this peer yet.</div>';
+          return;
+        }
+        let html = '<div class="table-wrap"><table><thead><tr>' +
+          '<th>Time</th><th>Domain</th><th>Status</th><th>Type</th>' +
+          '</tr></thead><tbody>';
+        d.queries.forEach(q => {
+          const { label, color } = statusLabel(q.status);
+          const t = new Date(q.time * 1000).toLocaleTimeString([], {hour12:false, hour:'2-digit', minute:'2-digit', second:'2-digit'});
+          html += `<tr>
+            <td class="td-mono text-dim" style="font-size:0.78rem;">${t}</td>
+            <td style="font-family:var(--mono); font-size:0.82rem; max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${q.domain}</td>
+            <td><span style="font-family:var(--mono); font-size:0.75rem; color:${color}; font-weight:600;">${label}</span></td>
+            <td class="td-mono text-dim" style="font-size:0.75rem;">${q.type || 'A'}</td>
+          </tr>`;
+        });
+        html += '</tbody></table></div>';
+        body.innerHTML = html;
+      })
+      .catch(() => {
+        if (btn) { btn.disabled = false; btn.textContent = '↺ Refresh'; }
+        body.innerHTML = '<div style="padding:16px; color:var(--text-muted); font-size:0.85rem;">Pi-hole unavailable.</div>';
+      });
+  }
+
+  load();
+  if (btn) btn.addEventListener('click', load);
+})();
+{% endif %}
 </script>
 {% endblock %}

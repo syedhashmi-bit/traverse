@@ -1,5 +1,29 @@
 /* Traverse — client-side helpers */
 
+// ── Theme toggle ──────────────────────────────────────────────────────────────
+(function () {
+  const STORAGE_KEY = 'traverse-theme';
+  function applyTheme(theme) {
+    document.body.classList.toggle('theme-light', theme === 'light');
+    document.body.classList.toggle('theme-dark',  theme !== 'light');
+    const btn = document.getElementById('theme-toggle');
+    if (btn) btn.textContent = theme === 'light' ? '☀' : '☾';
+  }
+  const saved = localStorage.getItem(STORAGE_KEY) || 'dark';
+  applyTheme(saved);
+  document.addEventListener('DOMContentLoaded', () => {
+    applyTheme(localStorage.getItem(STORAGE_KEY) || 'dark');
+    const btn = document.getElementById('theme-toggle');
+    if (btn) {
+      btn.addEventListener('click', () => {
+        const next = document.body.classList.contains('theme-light') ? 'dark' : 'light';
+        localStorage.setItem(STORAGE_KEY, next);
+        applyTheme(next);
+      });
+    }
+  });
+})();
+
 // Copy-to-clipboard
 function copyText(text, btn) {
   navigator.clipboard.writeText(text).then(() => {

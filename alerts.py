@@ -113,6 +113,65 @@ def _check():
     except Exception:
         pass
 
+    # ── Bandwidth anomaly detection ───────────────────────────────────────
+    try:
+        from database import get_peer_bandwidth_snapshots, count_unseen_alerts
+        import time as _t
+        for peer in peers:
+            snaps = get_peer_bandwidth_snapshots(peer['id'], limit=12)
+            if len(snaps) < 3:
+                continue
+            # Compute per-interval rates (bytes/sec)
+            rates = []
+            for i in range(1, len(snaps)):
+                prev, curr = snaps[i - 1], snaps[i]
+                try:
+                    from datetime import datetime as _dt
+                    t1 = _dt.fromisoformat(prev['recorded_at'])
+                    t2 = _dt.fromisoformat(curr['recorded_at'])
+                    secs = (t2 - t1).total_seconds()
+                    if secs <= 0:
+                        continue
+                    total_bytes = max(0, (curr['rx_bytes'] - prev['rx_bytes']) +
+                                        (curr['tx_bytes'] - prev['tx_bytes']))
+                    rates.append(total_bytes / secs)
+                except Exception:
+                    continue
+            if len(rates) < 2:
+                continue
+            current_rate = rates[-1]
+            avg_rate     = sum(rates[:-1]) / len(rates[:-1])
+            _1MB = 1_048_576
+            if current_rate > _1MB and avg_rate > 0 and current_rate > avg_rate * 5:
+                def _fmt(b):
+                    if b < 1024: return f'{b:.0f} B/s'
+                    if b < 1048576: return f'{b/1024:.1f} KB/s'
+                    return f'{b/1048576:.2f} MB/s'
+                msg = (f'{peer["name"]} unusual bandwidth: '
+                       f'{_fmt(current_rate)} vs avg {_fmt(avg_rate)}')
+                # Deduplicate: skip if identical unseen alert in last 10 min
+                try:
+                    with __import__('sqlite3').connect(
+                            __import__('os').path.join(
+                                __import__('os').path.dirname(__import__('os').path.abspath(__file__)),
+                                __import__('os').getenv('DATABASE_PATH', 'database.db'))) as _c:
+                        _c.row_factory = __import__('sqlite3').Row
+                        _c.execute("PRAGMA journal_mode=WAL")
+                        cutoff = __import__('datetime').datetime.utcnow().replace(
+                            microsecond=0).isoformat()
+                        row = _c.execute(
+                            "SELECT id FROM alerts WHERE peer_id=? AND type='bw_anomaly'"
+                            " AND seen=0 AND created_at > datetime(?, '-10 minutes')",
+                            (peer['id'], cutoff)
+                        ).fetchone()
+                        if row:
+                            continue
+                except Exception:
+                    pass
+                create_alert('bw_anomaly', msg, peer_id=peer['id'], severity='warning')
+    except Exception:
+        pass
+
     # ── Alert conditions ───────────────────────────────────────────────────
     try:
         today_str = datetime.utcnow().strftime('%Y-%m-%d')

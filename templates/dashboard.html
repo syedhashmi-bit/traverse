@@ -46,6 +46,13 @@
     <span class="noc-val" style="color:var(--warning);">{{ expired_peers }}</span>
   </div>
   {% endif %}
+  {% if pihole_enabled %}
+  <span class="noc-sep">│</span>
+  <div class="noc-stat">
+    <span class="noc-lbl">PIHOLE</span>
+    <span class="noc-val" id="lv-pihole" style="color:var(--text-muted);">—</span>
+  </div>
+  {% endif %}
   <!-- right: live speeds + indicator -->
   <div class="noc-bar-right">
     <span class="noc-speed-val" id="rx-rate-num" style="color:var(--info);">– B/s</span>
@@ -56,6 +63,7 @@
     <span class="live-badge" id="live-badge">
       <span class="live-dot" id="live-dot"></span>LIVE
     </span>
+    <button id="pause-btn" class="noc-pause-btn" title="Pause auto-refresh">⟳ LIVE</button>
   </div>
 </div>
 
@@ -85,6 +93,46 @@
     <span class="noc-speed-val" id="hv-speed" style="color:var(--text-muted);">—</span>
   </div>
 </div>
+
+<!-- ── Pi-hole Status Bar ─────────────────────────────────────────────── -->
+{% if pihole_enabled %}
+<a class="noc-pihole-bar" id="pihole-bar"
+   href="{{ pihole_url }}" target="_blank" rel="noopener"
+   title="Open Pi-hole dashboard (VPN required)">
+  <div class="noc-stat">
+    <span class="noc-lbl">BLOCKED</span>
+    <span class="noc-val" id="ph-blocked" style="color:var(--warning);">—</span>
+  </div>
+  <span class="noc-sep">│</span>
+  <div class="noc-stat">
+    <span class="noc-lbl">RATE</span>
+    <span class="noc-val" id="ph-rate">—</span>
+  </div>
+  <span class="noc-sep">│</span>
+  <div class="noc-stat">
+    <span class="noc-lbl">BLOCKLIST</span>
+    <span class="noc-val" id="ph-domains">—</span>
+  </div>
+  <span class="noc-sep">│</span>
+  <div class="noc-stat">
+    <span class="noc-lbl">QUERIES</span>
+    <span class="noc-val" id="ph-queries">—</span>
+  </div>
+  <span class="noc-sep">│</span>
+  <div class="noc-stat">
+    <span class="noc-lbl">CLIENTS</span>
+    <span class="noc-val" id="ph-clients">—</span>
+  </div>
+  <span class="noc-sep">│</span>
+  <div class="noc-stat">
+    <span class="noc-lbl">PIHOLE</span>
+    <span class="noc-val" id="ph-status" style="color:var(--text-muted);">—</span>
+  </div>
+  <div class="noc-bar-right">
+    <span style="font-family:var(--mono); font-size:10px; color:var(--text-dim); opacity:0.55; letter-spacing:0.05em;">↗ ADMIN</span>
+  </div>
+</a>
+{% endif %}
 
 <!-- ── NOC Grid ───────────────────────────────────────────────────────── -->
 <div class="noc-layout">
@@ -134,7 +182,8 @@
                         id="dot-{{ peer.id }}"></span>
                 </td>
                 <td>
-                  <a href="{{ url_for('peers.detail', peer_id=peer.id) }}" class="noc-link">{{ peer.name }}</a>
+                  {% set _icons = {'phone': '📱', 'laptop': '💻', 'desktop': '🖥', 'tablet': '📋', 'router': '🌐', 'other': '◈'} %}
+                  <span style="font-size:0.85em; margin-right:4px;">{{ _icons.get(peer.device or 'other', '◈') }}</span><a href="{{ url_for('peers.detail', peer_id=peer.id) }}" class="noc-link">{{ peer.name }}</a>
                 </td>
                 <td class="mono dim hide-mobile">{{ peer.vpn_ip }}</td>
                 <td class="mono dim hide-mobile" id="hs-{{ peer.id }}">{{ peer.last_handshake_short }}</td>
@@ -215,6 +264,17 @@
           <a href="{{ url_for('settings.index') }}"  class="noc-qbtn">⚙ Settings</a>
         </div>
       </div>
+
+      {% if pihole_enabled %}
+      <!-- Top blocked domains -->
+      <div class="noc-panel" id="top-blocked-panel" style="display:none;">
+        <div class="noc-panel-hdr">
+          <span class="noc-panel-title">TOP BLOCKED DOMAINS</span>
+          <span class="noc-panel-sub" id="top-blocked-ts" style="color:var(--text-dim);"></span>
+        </div>
+        <div id="top-blocked-body" style="padding:6px 0;"></div>
+      </div>
+      {% endif %}
 
     </div><!-- /noc-col right -->
 
@@ -388,7 +448,30 @@
   }
 
   refresh();
-  setInterval(refresh, INTERVAL);
+  setInterval(() => { if (!window._dashPaused) refresh(); }, INTERVAL);
+})();
+
+/* ── Pause / resume controller ───────────────────────────── */
+window._dashPaused = false;
+(function () {
+  const btn = document.getElementById('pause-btn');
+  if (!btn) return;
+  function updateBtn() {
+    if (window._dashPaused) {
+      btn.textContent  = '⟳ PAUSED';
+      btn.style.color  = 'var(--warning)';
+      btn.style.borderColor = 'var(--warning)';
+    } else {
+      btn.textContent  = '⟳ LIVE';
+      btn.style.color  = '';
+      btn.style.borderColor = '';
+    }
+  }
+  btn.addEventListener('click', () => {
+    window._dashPaused = !window._dashPaused;
+    updateBtn();
+  });
+  updateBtn();
 })();
 
 /* ── Server health polling ────────────────────────────────── */
@@ -426,6 +509,16 @@
             spd.textContent = 'no data';
           }
         }
+        const phEl = document.getElementById('lv-pihole');
+        if (phEl && d.pihole !== null && d.pihole !== undefined) {
+          if (d.pihole.running) {
+            phEl.textContent = '● ACTIVE';
+            phEl.style.color = 'var(--success)';
+          } else {
+            phEl.textContent = '○ DOWN';
+            phEl.style.color = 'var(--danger)';
+          }
+        }
         // Sync speedtest widget with latest DB result if not currently running
         if (d.last_speedtest && !window._stRunning) {
           const s = d.last_speedtest;
@@ -435,7 +528,7 @@
       .catch(() => {});
   }
   refreshHealth();
-  setInterval(refreshHealth, 30000);
+  setInterval(() => { if (!window._dashPaused) refreshHealth(); }, 30000);
 })();
 
 /* ── Speedtest widget ─────────────────────────────────────── */
@@ -536,5 +629,88 @@
     })
     .catch(() => {});
 })();
+
+/* ── Pi-hole stats (60 s poll) ────────────────────────────── */
+(function () {
+  function fmtCount(n) {
+    if (n === undefined || n === null) return '—';
+    return Number(n).toLocaleString();
+  }
+  function fmtDomains(n) {
+    if (!n && n !== 0) return '—';
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000)    return Math.round(n / 1000) + 'K';
+    return String(n);
+  }
+  function applyUnreachable() {
+    const bar = document.getElementById('pihole-bar');
+    if (bar) bar.style.opacity = '0.4';
+    const st = document.getElementById('ph-status');
+    if (st) { st.textContent = '● UNREACHABLE'; st.style.color = 'var(--text-dim)'; }
+  }
+  function refreshPihole() {
+    fetch('/api/pihole-stats')
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(d => {
+        const bar = document.getElementById('pihole-bar');
+        if (!bar || !d.enabled) return;
+        if (!d.reachable) { applyUnreachable(); return; }
+        bar.style.opacity = '';
+        const g = id => document.getElementById(id);
+        if (g('ph-blocked')) g('ph-blocked').textContent = fmtCount(d.blocked);
+        if (g('ph-rate'))    g('ph-rate').textContent    = d.percent_blocked + '%';
+        if (g('ph-domains')) g('ph-domains').textContent = fmtDomains(d.domains_blocked);
+        if (g('ph-queries')) g('ph-queries').textContent = fmtCount(d.total_queries);
+        if (g('ph-clients')) g('ph-clients').textContent = String(d.unique_clients);
+        const st = g('ph-status');
+        if (st) { st.textContent = '● ACTIVE'; st.style.color = 'var(--success)'; }
+      })
+      .catch(applyUnreachable);
+  }
+  refreshPihole();
+  setInterval(() => { if (!window._dashPaused) refreshPihole(); }, 60000);
+})();
+
+/* ── Top blocked domains (5 min) ─────────────────────────── */
+{% if pihole_enabled %}
+(function () {
+  function loadTopBlocked() {
+    fetch('/api/pihole/top-blocked')
+      .then(r => r.json())
+      .then(d => {
+        const panel = document.getElementById('top-blocked-panel');
+        const body  = document.getElementById('top-blocked-body');
+        const ts    = document.getElementById('top-blocked-ts');
+        if (!panel || !d.ok || !d.items || d.items.length === 0) {
+          if (panel) panel.style.display = 'none';
+          return;
+        }
+        panel.style.display = '';
+        const max = d.items[0].count || 1;
+        let html = '';
+        d.items.forEach(item => {
+          const pct = Math.round((item.count / max) * 100);
+          html += `<div style="padding:4px 14px 3px;">
+            <div style="display:flex; justify-content:space-between; font-family:var(--mono); font-size:11px; margin-bottom:2px;">
+              <span style="color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:75%;">${item.domain}</span>
+              <span style="color:var(--warning); font-weight:600; flex-shrink:0; margin-left:8px;">${item.count.toLocaleString()}</span>
+            </div>
+            <div style="height:3px; border-radius:2px; background:rgba(239,68,68,0.15);">
+              <div style="height:3px; border-radius:2px; background:var(--danger); width:${pct}%; opacity:0.7;"></div>
+            </div>
+          </div>`;
+        });
+        body.innerHTML = html;
+        if (ts) ts.textContent = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+      })
+      .catch(() => {
+        const panel = document.getElementById('top-blocked-panel');
+        if (panel) panel.style.display = 'none';
+      });
+  }
+  loadTopBlocked();
+  setInterval(() => { if (!window._dashPaused) loadTopBlocked(); }, 300000);
+})();
+{% endif %}
 </script>
 {% endblock %}

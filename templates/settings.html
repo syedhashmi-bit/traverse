@@ -157,6 +157,87 @@ WG_DNS={{ dns }}</div>
       </div>
     </div>
 
+    {% if pihole_enabled %}
+    <!-- Pi-hole -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Pi-hole Ad Blocker</span>
+        {% if pihole_status and pihole_status.running %}
+          <span class="badge badge-success">● active</span>
+        {% elif pihole_status %}
+          <span class="badge badge-danger">○ down</span>
+        {% else %}
+          <span class="badge badge-muted">unknown</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        {% if pihole_status %}
+        <div class="detail-field">
+          <div class="detail-label">Blocking</div>
+          <div class="detail-value">
+            {% if pihole_status.blocking_enabled %}
+              <span class="badge badge-success">enabled</span>
+            {% else %}
+              <span class="badge badge-warning">disabled</span>
+            {% endif %}
+          </div>
+        </div>
+        {% if pihole_status.blocked_domains is not none %}
+        <div class="detail-field">
+          <div class="detail-label">Blocked Domains</div>
+          <div class="detail-value mono">{{ '{:,}'.format(pihole_status.blocked_domains) }}</div>
+        </div>
+        {% endif %}
+        {% if pihole_status.gravity_updated %}
+        <div class="detail-field">
+          <div class="detail-label">Gravity Updated</div>
+          <div class="detail-value text-sm text-muted">{{ pihole_status.gravity_updated }}</div>
+        </div>
+        {% endif %}
+        {% endif %}
+        <div class="detail-field">
+          <div class="detail-label">Admin Panel</div>
+          <div class="detail-value text-sm">
+            <code style="color:var(--accent);">{{ pihole_url }}</code>
+            <span class="text-dim" style="margin-left:8px; font-size:0.78rem;">(only accessible when connected to VPN)</span>
+          </div>
+        </div>
+        {% if pihole_pass %}
+        <div class="detail-field">
+          <div class="detail-label">Admin Password</div>
+          <div class="detail-value">
+            <span class="copy-block-wrap">
+              <input type="password" id="ph-pass" value="{{ pihole_pass }}"
+                     readonly style="background:var(--surface-2); border:1px solid var(--border);
+                     border-radius:var(--radius); padding:4px 10px; color:var(--text); font-family:var(--mono);
+                     font-size:0.82rem; width:240px;">
+              <button class="copy-btn btn-sm"
+                      onclick="this.previousElementSibling.type=this.previousElementSibling.type==='password'?'text':'password'; this.textContent=this.previousElementSibling.type==='text'?'Hide':'Show'">Show</button>
+              <button class="copy-btn btn-sm" style="margin-left:4px;"
+                      onclick="copyText(document.getElementById('ph-pass').value, this)">Copy</button>
+            </span>
+          </div>
+        </div>
+        {% endif %}
+        <div class="action-bar mt-12" style="flex-wrap:wrap; gap:8px;">
+          <form method="POST" action="{{ url_for('settings.pihole_enable') }}" style="display:inline;">
+            <button class="btn btn-success btn-sm">▶ Enable Blocking</button>
+          </form>
+          <form method="POST" action="{{ url_for('settings.pihole_disable') }}" style="display:inline;">
+            <button class="btn btn-warning btn-sm">⏸ Disable Blocking</button>
+          </form>
+          <form method="POST" action="{{ url_for('settings.pihole_update_gravity') }}" style="display:inline;">
+            <button class="btn btn-secondary btn-sm">↻ Update Blocklists</button>
+          </form>
+        </div>
+        <div class="mt-8 text-xs text-muted">
+          Blocklist update (gravity) runs in the background and takes about a minute.
+          VPN clients automatically get ad blocking via <code style="color:var(--accent);">DNS = 10.8.0.1</code>.
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
     <!-- Backup & Restore -->
     <div class="card">
       <div class="card-header"><span class="card-title">Backup &amp; Restore</span></div>

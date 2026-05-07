@@ -2,6 +2,9 @@ import re
 import subprocess
 import threading
 import time
+import urllib.request as _ureq
+import urllib.error as _uerr
+import json as _json
 from collections import deque
 from datetime import datetime
 from flask import Blueprint, jsonify, request
@@ -220,6 +223,150 @@ def peer_bandwidth(peer_id):
     return jsonify({'peer_id': peer_id, 'points': points})
 
 
+# ── Pi-hole v6 stats ─────────────────────────────────────────────────────────
+
+_pihole_session     = {'sid': None, 'expires': 0.0}
+_pihole_stats_cache = {'ts': 0.0, 'data': None}
+_PIHOLE_STATS_TTL   = 55.0   # slightly under 60 s frontend poll
+
+
+def _pihole_auth():
+    """Return a valid Pi-hole v6 session SID, refreshing if expired."""
+    import os
+    now = time.time()
+    if _pihole_session['sid'] and now < _pihole_session['expires']:
+        return _pihole_session['sid']
+    _pihole_session['sid'] = None
+    password = os.getenv('PIHOLE_PASSWORD', '')
+    if not password:
+        return None
+    try:
+        payload = _json.dumps({'password': password}).encode()
+        req = _ureq.Request(
+            'http://10.8.0.1:8080/api/auth',
+            data=payload,
+            headers={'Content-Type': 'application/json'},
+            method='POST',
+        )
+        with _ureq.urlopen(req, timeout=3) as resp:
+            data = _json.loads(resp.read())
+        sess = data.get('session', {})
+        if sess.get('valid') and sess.get('sid'):
+            _pihole_session['sid']     = sess['sid']
+            _pihole_session['expires'] = now + sess.get('validity', 1800) - 30
+            return _pihole_session['sid']
+    except Exception:
+        pass
+    return None
+
+
+def _fetch_pihole_summary():
+    """Fetch Pi-hole v6 /api/stats/summary, cached for 55 s. Returns dict or None."""
+    now = time.time()
+    if (now - _pihole_stats_cache['ts'] < _PIHOLE_STATS_TTL
+            and _pihole_stats_cache['data'] is not None):
+        return _pihole_stats_cache['data']
+    sid = _pihole_auth()
+    if not sid:
+        return None
+    try:
+        req = _ureq.Request(
+            'http://10.8.0.1:8080/api/stats/summary',
+            headers={'X-FTL-SID': sid},
+        )
+        with _ureq.urlopen(req, timeout=3) as resp:
+            data = _json.loads(resp.read())
+        _pihole_stats_cache['ts']   = now
+        _pihole_stats_cache['data'] = data
+        return data
+    except Exception:
+        return None
+
+
+@api_bp.route('/api/pihole/top-blocked')
+@login_required
+def pihole_top_blocked():
+    """Return top 10 blocked domains from Pi-hole v6 API."""
+    import os
+    if not os.getenv('PIHOLE_ENABLED'):
+        return jsonify({'ok': False})
+    sid = _pihole_auth()
+    if not sid:
+        return jsonify({'ok': False, 'reason': 'auth failed'})
+    try:
+        req = _ureq.Request(
+            'http://10.8.0.1:8080/api/stats/top_blocked?count=10',
+            headers={'X-FTL-SID': sid},
+        )
+        with _ureq.urlopen(req, timeout=4) as resp:
+            raw = _json.loads(resp.read())
+        blocked = raw.get('blocked', raw.get('top_blocked', {}))
+        if isinstance(blocked, dict):
+            items = [{'domain': k, 'count': v} for k, v in blocked.items()]
+        elif isinstance(blocked, list):
+            items = blocked
+        else:
+            items = []
+        items = sorted(items, key=lambda x: x.get('count', 0), reverse=True)[:10]
+        return jsonify({'ok': True, 'items': items})
+    except Exception as e:
+        return jsonify({'ok': False, 'reason': str(e)})
+
+
+@api_bp.route('/api/pihole/peer-queries/<vpn_ip>')
+@login_required
+def pihole_peer_queries(vpn_ip):
+    """Return last 20 DNS queries for a specific VPN IP from Pi-hole v6 API."""
+    import os
+    if not os.getenv('PIHOLE_ENABLED'):
+        return jsonify({'ok': False, 'reason': 'pihole disabled'})
+    sid = _pihole_auth()
+    if not sid:
+        return jsonify({'ok': False, 'reason': 'auth failed'})
+    try:
+        req = _ureq.Request(
+            'http://10.8.0.1:8080/api/queries?client=' + vpn_ip + '&length=100',
+            headers={'X-FTL-SID': sid},
+        )
+        with _ureq.urlopen(req, timeout=4) as resp:
+            raw = _json.loads(resp.read())
+        rows = raw.get('queries', raw.get('data', []))
+        results = []
+        for q in rows[:20]:
+            results.append({
+                'time':   q.get('time', 0),
+                'domain': q.get('domain', ''),
+                'status': q.get('status', ''),
+                'type':   q.get('type', 'A'),
+            })
+        return jsonify({'ok': True, 'queries': results})
+    except Exception as e:
+        return jsonify({'ok': False, 'reason': str(e)})
+
+
+@api_bp.route('/api/pihole-stats')
+@login_required
+def pihole_stats_api():
+    import os
+    if not os.getenv('PIHOLE_ENABLED'):
+        return jsonify({'enabled': False})
+    data = _fetch_pihole_summary()
+    if data is None:
+        return jsonify({'enabled': True, 'reachable': False})
+    queries      = data.get('queries', {})
+    clients_data = data.get('clients', {})
+    gravity      = data.get('gravity', {})
+    return jsonify({
+        'enabled':         True,
+        'reachable':       True,
+        'blocked':         queries.get('blocked', 0),
+        'total_queries':   queries.get('total', 0),
+        'percent_blocked': round(float(queries.get('percent_blocked', 0.0)), 1),
+        'domains_blocked': gravity.get('domains_being_blocked', 0),
+        'unique_clients':  clients_data.get('active', 0),
+    })
+
+
 # ── Server health ─────────────────────────────────────────────────────────────
 
 def _cpu_percent():
@@ -309,6 +456,34 @@ def _wg_uptime():
         return None
 
 
+def _pihole_status():
+    """Return dict with pihole running state and blocked domain count."""
+    import os
+    if not os.getenv('PIHOLE_ENABLED'):
+        return None
+    try:
+        r = subprocess.run(
+            ['pihole', 'status'],
+            capture_output=True, text=True, timeout=5
+        )
+        running = 'FTL is listening' in r.stdout or 'Pi-hole blocking is enabled' in r.stdout
+        # Parse blocked count from gravity db
+        blocked = None
+        try:
+            import sqlite3 as _sql
+            with _sql.connect('/etc/pihole/gravity.db') as gc:
+                row = gc.execute(
+                    "SELECT COUNT(*) FROM vw_gravity"
+                ).fetchone()
+                if row:
+                    blocked = row[0]
+        except Exception:
+            pass
+        return {'running': running, 'blocked_domains': blocked}
+    except Exception:
+        return {'running': False, 'blocked_domains': None}
+
+
 @api_bp.route('/api/server/health')
 @login_required
 def server_health():
@@ -322,6 +497,7 @@ def server_health():
         'wg_uptime':    _wg_uptime(),
         'wg_running':   get_interface_status()['running'],
         'server_ip':    WG_ENDPOINT,
+        'pihole':       _pihole_status(),
         'last_speedtest': {
             'download_mbps': last_st['download_mbps'],
             'upload_mbps':   last_st['upload_mbps'],
@@ -340,8 +516,10 @@ _speedtest_lock = threading.Lock()
 def _run_speedtest_bg():
     import json as _json
     try:
+        import shutil
+        st_bin = shutil.which('speedtest-cli') or '/var/www/traverse/venv/bin/speedtest-cli'
         r = subprocess.run(
-            ['speedtest-cli', '--json', '--secure'],
+            [st_bin, '--json', '--secure'],
             capture_output=True, text=True, timeout=120
         )
         if r.returncode != 0:

@@ -1,0 +1,187 @@
+{% extends 'base.html' %}
+{% block title %}Topology{% endblock %}
+{% block page_title %}Network Topology{% endblock %}
+
+{% block content %}
+<div class="section-header mb-16">
+  <div>
+    <div class="section-title">Network Topology</div>
+    <div class="section-sub">VPN peer connectivity diagram — click a node to open peer detail</div>
+  </div>
+</div>
+
+<div class="card" style="padding:0; overflow:hidden;">
+  <canvas id="topo-canvas" style="display:block; width:100%; cursor:pointer;"></canvas>
+</div>
+
+<div style="margin-top:10px; display:flex; gap:16px; flex-wrap:wrap; font-family:var(--mono); font-size:11px; color:var(--text-muted);">
+  <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#f59e0b; margin-right:5px; vertical-align:middle;"></span>Server</span>
+  <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#10b981; margin-right:5px; vertical-align:middle;"></span>Active peer</span>
+  <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#5a6278; margin-right:5px; vertical-align:middle;"></span>Inactive peer</span>
+  <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#ef4444; margin-right:5px; vertical-align:middle;"></span>Disabled peer</span>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  const canvas = document.getElementById('topo-canvas');
+  const ctx    = canvas.getContext('2d');
+  let nodes = [], W = 0, H = 0, clickables = [];
+
+  const COL_SERVER   = '#f59e0b';
+  const COL_ACTIVE   = '#10b981';
+  const COL_INACTIVE = '#5a6278';
+  const COL_DISABLED = '#ef4444';
+  const COL_LINE     = 'rgba(90,98,120,0.35)';
+  const COL_LINE_ACT = 'rgba(16,185,129,0.4)';
+
+  function resize() {
+    const rect = canvas.parentElement.getBoundingClientRect();
+    W = Math.max(rect.width || 600, 400);
+    H = Math.max(Math.min(W * 0.55, 520), 280);
+    canvas.width  = W;
+    canvas.height = H;
+    draw();
+  }
+
+  function nodeColor(n) {
+    if (!n.enabled) return COL_DISABLED;
+    if (n.active)   return COL_ACTIVE;
+    return COL_INACTIVE;
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+
+    const cx = W / 2, cy = H / 2;
+    const R  = Math.min(W, H) * 0.36;
+
+    if (nodes.length === 0) {
+      ctx.fillStyle = 'rgba(90,98,120,0.5)';
+      ctx.font = '14px var(--mono, monospace)';
+      ctx.textAlign = 'center';
+      ctx.fillText('No peers configured', cx, cy);
+      return;
+    }
+
+    clickables = [];
+
+    const angleStep = (2 * Math.PI) / nodes.length;
+
+    nodes.forEach((n, i) => {
+      const angle = -Math.PI / 2 + i * angleStep;
+      n._x = cx + R * Math.cos(angle);
+      n._y = cy + R * Math.sin(angle);
+    });
+
+    // Draw lines
+    nodes.forEach(n => {
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(n._x, n._y);
+      ctx.strokeStyle = n.active ? COL_LINE_ACT : COL_LINE;
+      ctx.lineWidth   = n.active ? 1.5 : 1;
+      ctx.setLineDash(n.active ? [] : [4, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    });
+
+    // Draw server node
+    const sR = 28;
+    ctx.beginPath();
+    ctx.arc(cx, cy, sR, 0, 2 * Math.PI);
+    ctx.fillStyle   = 'rgba(245,158,11,0.15)';
+    ctx.fill();
+    ctx.strokeStyle = COL_SERVER;
+    ctx.lineWidth   = 2;
+    ctx.stroke();
+    ctx.font        = '17px serif';
+    ctx.textAlign   = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle   = COL_SERVER;
+    ctx.fillText('⬡', cx, cy);
+    ctx.font        = 'bold 10px var(--mono, monospace)';
+    ctx.fillStyle   = '#f59e0b';
+    ctx.fillText('SERVER', cx, cy + sR + 13);
+
+    // Draw peer nodes
+    nodes.forEach(n => {
+      const pR  = 22;
+      const col = nodeColor(n);
+
+      ctx.beginPath();
+      ctx.arc(n._x, n._y, pR, 0, 2 * Math.PI);
+      ctx.fillStyle   = col.replace(')', ',0.15)').replace('rgb', 'rgba').replace('#', '');
+      // simpler fill approach:
+      ctx.fillStyle   = col + '28';
+      ctx.fill();
+      ctx.strokeStyle = col;
+      ctx.lineWidth   = n.active ? 2 : 1.5;
+      ctx.stroke();
+
+      // glow for active
+      if (n.active) {
+        ctx.beginPath();
+        ctx.arc(n._x, n._y, pR + 4, 0, 2 * Math.PI);
+        ctx.strokeStyle = col + '40';
+        ctx.lineWidth   = 3;
+        ctx.stroke();
+      }
+
+      ctx.font         = '14px serif';
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle    = col;
+      ctx.fillText(n.icon, n._x, n._y);
+
+      const maxW = 80;
+      ctx.font      = 'bold 10px var(--mono, monospace)';
+      ctx.fillStyle = col;
+      ctx.fillText(n.name.length > 10 ? n.name.slice(0, 9) + '…' : n.name, n._x, n._y + pR + 11);
+      ctx.font      = '9px var(--mono, monospace)';
+      ctx.fillStyle = 'rgba(90,98,120,0.8)';
+      ctx.fillText(n.vpn_ip, n._x, n._y + pR + 22);
+
+      clickables.push({ x: n._x, y: n._y, r: pR + 8, url: n.url });
+    });
+  }
+
+  canvas.addEventListener('click', function (e) {
+    const rect = canvas.getBoundingClientRect();
+    const mx   = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const my   = (e.clientY - rect.top)  * (canvas.height / rect.height);
+    for (const c of clickables) {
+      const dx = mx - c.x, dy = my - c.y;
+      if (dx*dx + dy*dy <= c.r*c.r) {
+        window.location.href = c.url;
+        return;
+      }
+    }
+  });
+
+  canvas.addEventListener('mousemove', function (e) {
+    const rect = canvas.getBoundingClientRect();
+    const mx   = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const my   = (e.clientY - rect.top)  * (canvas.height / rect.height);
+    let hit = false;
+    for (const c of clickables) {
+      const dx = mx - c.x, dy = my - c.y;
+      if (dx*dx + dy*dy <= c.r*c.r) { hit = true; break; }
+    }
+    canvas.style.cursor = hit ? 'pointer' : 'default';
+  });
+
+  fetch('/api/topology')
+    .then(r => r.json())
+    .then(d => {
+      nodes = d.nodes || [];
+      resize();
+    })
+    .catch(() => resize());
+
+  window.addEventListener('resize', resize);
+  resize();
+})();
+</script>
+{% endblock %}

@@ -73,6 +73,7 @@ def migrate_db():
             ('geo_cached_at',          "TEXT"),
             ('geo_country_code',       "TEXT"),
             ('geo_failed_at',          "TEXT"),
+            ('use_pihole',             "INTEGER NOT NULL DEFAULT 1"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE peers ADD COLUMN {col} {definition}")
@@ -195,6 +196,16 @@ def update_peer_notes(peer_id, notes, device):
         conn.execute(
             "UPDATE peers SET notes = ?, device = ?, updated_at = ? WHERE id = ?",
             (notes, device, now, peer_id)
+        )
+
+
+def update_peer_pihole(peer_id, use_pihole):
+    from datetime import datetime
+    now = datetime.utcnow().isoformat()
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE peers SET use_pihole = ?, updated_at = ? WHERE id = ?",
+            (1 if use_pihole else 0, now, peer_id)
         )
 
 

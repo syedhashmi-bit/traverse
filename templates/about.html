@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+{% block title %}About{% endblock %}
+{% block page_title %}About{% endblock %}
+
+{% block content %}
+<div class="section-header mb-16">
+  <div>
+    <div class="section-title">About Traverse</div>
+    <div class="section-sub">Version info and changelog</div>
+  </div>
+</div>
+
+<div style="display:grid; grid-template-columns:1fr 2fr; gap:24px; align-items:start;">
+
+  <!-- Left: identity + system info -->
+  <div>
+    <div class="card" style="text-align:center; padding:32px 24px;">
+      <img src="/static/img/app.png" alt="traverse" style="width:80px; height:80px; object-fit:contain; margin-bottom:16px; border-radius:12px;">
+      <div style="font-size:1.4rem; font-weight:700; color:var(--text); margin-bottom:4px;">traverse</div>
+      <div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:16px;">Personal WireGuard VPN dashboard</div>
+      <div class="badge badge-primary" style="font-size:0.9rem; padding:4px 14px;">v{{ version }}</div>
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+      <div class="card-header"><span class="card-title">System</span></div>
+      <table class="table" style="font-size:0.85rem;">
+        <tbody>
+          <tr><td style="color:var(--text-muted);">Python</td><td>{{ py_ver }}</td></tr>
+          <tr><td style="color:var(--text-muted);">WireGuard</td><td>{{ wg_ver or '—' }}</td></tr>
+          <tr><td style="color:var(--text-muted);">Pi-hole</td><td style="font-size:0.78rem; word-break:break-word;">{{ ph_ver or '—' }}</td></tr>
+          <tr><td style="color:var(--text-muted);">Uptime</td><td>{{ uptime or '—' }}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Right: changelog -->
+  <div class="card">
+    <div class="card-header"><span class="card-title">Changelog</span></div>
+    <div class="changelog-body" id="changelog-content">
+      {{ changelog | safe | replace('\n', '<br>') }}
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+/* Render raw markdown-ish CHANGELOG.md as styled HTML */
+(function () {
+  const el = document.getElementById('changelog-content');
+  if (!el) return;
+  const raw = {{ changelog | tojson }};
+  const lines = raw.split('\n');
+  let html = '';
+  for (const line of lines) {
+    if (line.startsWith('## '))      html += `<h3 class="cl-version">${esc(line.slice(3))}</h3>`;
+    else if (line.startsWith('### ')) html += `<h4 class="cl-section">${esc(line.slice(4))}</h4>`;
+    else if (line.startsWith('- '))  html += `<div class="cl-item">• ${esc(line.slice(2))}</div>`;
+    else if (line.trim() === '')     html += '<div style="height:6px;"></div>';
+    else                             html += `<div>${esc(line)}</div>`;
+  }
+  el.innerHTML = html;
+
+  function esc(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+})();
+</script>
+{% endblock %}

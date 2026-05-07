@@ -22,7 +22,7 @@
         <th>VPN IP</th>
         <th>DNS</th>
         <th>Status</th>
-        <th>Last Handshake</th>
+        <th>Last Seen</th>
         <th>RX / TX</th>
         <th>Expires</th>
         <th>Created</th>
@@ -58,7 +58,7 @@
             <span class="badge badge-muted">○ off</span>
           {% endif %}
         </td>
-        <td class="text-sm text-muted">{{ peer.last_handshake }}</td>
+        <td><span class="last-seen {{ peer.last_seen_cls }}">{{ peer.last_seen_label }}</span></td>
         <td class="td-mono text-xs">
           ↓ {{ peer.rx_fmt }}<br>↑ {{ peer.tx_fmt }}
         </td>

@@ -1,5 +1,7 @@
 import os
 import time
+from dotenv import load_dotenv
+load_dotenv()
 from flask import Blueprint, render_template
 from database import get_all_peers, update_peer_stats, count_expired_peers
 from wireguard import (
@@ -48,15 +50,17 @@ def index():
 
     return render_template(
         'dashboard.html',
-        wg_status     = status,
-        peers         = peers,
-        total_peers   = len(peers),
-        active_peers  = active_count,
-        total_rx      = format_bytes(total_rx),
-        total_tx      = format_bytes(total_tx),
-        subnet        = WG_SUBNET,
-        endpoint      = WG_ENDPOINT,
-        wg_port       = WG_PORT,
-        format_bytes  = format_bytes,
-        expired_peers = count_expired_peers(),
+        wg_status      = status,
+        peers          = peers,
+        total_peers    = len(peers),
+        active_peers   = active_count,
+        total_rx       = format_bytes(total_rx),
+        total_tx       = format_bytes(total_tx),
+        subnet         = WG_SUBNET,
+        endpoint       = WG_ENDPOINT,
+        wg_port        = WG_PORT,
+        format_bytes   = format_bytes,
+        expired_peers  = count_expired_peers(),
+        pihole_enabled = bool(os.getenv('PIHOLE_ENABLED')),
+        pihole_url     = os.getenv('PIHOLE_URL', 'http://10.8.0.1:8080/admin'),
     )

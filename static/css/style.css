@@ -887,6 +887,33 @@ tbody td {
   opacity: 0.85;
 }
 
+/* ── Pi-hole status bar ──────────────────────────────────────────────────── */
+
+.noc-pihole-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 18px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 11px;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  opacity: 0.85;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  transition: opacity 0.15s ease, background 0.15s ease, border-bottom-color 0.15s ease;
+}
+
+.noc-pihole-bar:hover {
+  opacity: 1;
+  background: rgba(124, 106, 247, 0.04);
+  border-bottom-color: rgba(124, 106, 247, 0.35);
+}
+
 /* ── Bottom nav (mobile only) ────────────────────────────────────────────── */
 
 .bottom-nav {
@@ -994,6 +1021,19 @@ tbody td {
     padding: 4px 8px;
   }
   .noc-health-bar .noc-sep { display: none; }
+  .noc-pihole-bar {
+    flex-wrap: wrap;
+    padding: 5px 10px;
+    gap: 4px;
+  }
+  .noc-pihole-bar .noc-stat {
+    flex: 1 0 calc(33.333% - 1px);
+    padding: 5px 8px;
+    border-bottom: 1px solid rgba(42,47,74,0.4);
+    border-right: 1px solid rgba(42,47,74,0.4);
+  }
+  .noc-pihole-bar .noc-bar-right { flex: 0 0 100%; padding: 4px 8px; }
+  .noc-pihole-bar .noc-sep { display: none; }
 
   /* Hide less important NOC table columns */
   .hide-mobile      { display: none; }
@@ -1407,3 +1447,225 @@ body.noc .content {
 
 .mono { font-family: var(--mono); }
 .dim  { color: var(--text-dim); }
+
+/* ── Logs page ───────────────────────────────────────────────────────── */
+
+.logs-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+@media (max-width: 860px) { .logs-grid { grid-template-columns: 1fr; } }
+
+.log-box {
+  background: var(--surface-2);
+  border: none;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+  padding: 12px 14px;
+  height: 420px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+/* ── Wizard steps indicator ──────────────────────────────────────────── */
+
+.wizard-steps {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 20px;
+}
+.wizard-step {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+}
+.wizard-step-line {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+  margin: 0 8px;
+}
+.step-num {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono);
+  flex-shrink: 0;
+}
+.step-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-dim);
+}
+.wizard-step.active .step-num {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.wizard-step.active .step-label { color: var(--text); }
+.wizard-step.completed .step-num {
+  background: rgba(16,185,129,0.15);
+  border-color: var(--success);
+  color: var(--success);
+}
+.wizard-step.completed .step-label { color: var(--text-muted); }
+
+/* ── Last-seen badges ────────────────────────────────────────────────── */
+
+.last-seen {
+  font-size: 0.78rem;
+  font-weight: 500;
+  font-family: var(--mono);
+  white-space: nowrap;
+}
+.seen-online { color: var(--success); }
+.seen-recent { color: var(--success); opacity: 0.8; }
+.seen-today  { color: var(--text-muted); }
+.seen-week   { color: var(--text-dim); }
+.seen-old    { color: var(--text-dim); opacity: 0.6; }
+.seen-never  { color: var(--text-dim); opacity: 0.5; }
+
+/* ── Theme toggle button ─────────────────────────────────────────────── */
+
+.theme-toggle-btn {
+  font-size: 1rem;
+  padding: 0 8px;
+  min-width: 32px;
+  line-height: 1;
+}
+
+/* ── Pause pill button (dashboard NOC bar) ───────────────────────────── */
+
+.noc-pause-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 2px 7px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.noc-pause-btn:hover { color: var(--text); border-color: var(--text-muted); }
+
+/* ── Light theme overrides ───────────────────────────────────────────── */
+
+body.theme-light {
+  --bg:         #f0f2f8;
+  --surface:    #ffffff;
+  --surface-2:  #e8eaf2;
+  --surface-3:  #dde0ee;
+  --border:     #c8cce0;
+  --text:       #1a1d2e;
+  --text-muted: #5a6380;
+  --text-dim:   #8890a8;
+}
+
+body.theme-light .topbar,
+body.theme-light .sidebar {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+body.theme-light .noc-bar,
+body.theme-light .noc-health-bar,
+body.theme-light .noc-pihole-bar {
+  background: #e8eaf2;
+  border-color: var(--border);
+}
+
+body.theme-light .noc-pre,
+body.theme-light pre {
+  background: #e2e5f0;
+  color: var(--text);
+}
+
+body.theme-light .card,
+body.theme-light .stat-card,
+body.theme-light .noc-panel,
+body.theme-light .noc-table-wrap {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+body.theme-light .noc-table th {
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+
+body.theme-light .noc-table tr:hover td {
+  background: var(--surface-2);
+}
+
+body.theme-light input,
+body.theme-light select,
+body.theme-light textarea {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+body.theme-light .btn-ghost {
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+
+body.theme-light .btn-ghost:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+body.theme-light .noc-pihole-bar:hover {
+  background: rgba(124,106,247,0.08);
+}
+
+/* ── About / Changelog ─────────────────────────────────────────────────── */
+.changelog-body {
+  padding: 16px 20px;
+  font-size: 0.84rem;
+  line-height: 1.7;
+  color: var(--text-muted);
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.cl-version {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--primary);
+  margin: 18px 0 4px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.cl-section {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 12px 0 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.cl-item {
+  padding: 1px 0 1px 8px;
+  color: var(--text-muted);
+}

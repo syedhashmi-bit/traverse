@@ -1,0 +1,244 @@
+{% extends 'base.html' %}
+{% block title %}Add Peer — Wizard{% endblock %}
+{% block page_title %}Add Peer{% endblock %}
+
+{% block content %}
+<div class="max-w-lg">
+
+  <div class="section-header mb-16">
+    <div>
+      <div class="section-title">New Peer — Setup Wizard</div>
+      <div class="section-sub">{{ current_count }} / {{ max_peers }} peers used</div>
+    </div>
+    <a href="{{ url_for('peers.create') }}" class="btn btn-secondary btn-sm">Simple form</a>
+  </div>
+
+  <!-- Step indicator -->
+  <div class="wizard-steps" id="wizard-steps">
+    <div class="wizard-step active" id="step-ind-1">
+      <span class="step-num">1</span><span class="step-label">Info</span>
+    </div>
+    <div class="wizard-step-line"></div>
+    <div class="wizard-step" id="step-ind-2">
+      <span class="step-num">2</span><span class="step-label">Preview</span>
+    </div>
+    <div class="wizard-step-line"></div>
+    <div class="wizard-step" id="step-ind-3">
+      <span class="step-num">3</span><span class="step-label">Done</span>
+    </div>
+  </div>
+
+  <!-- ── Step 1: Basic info ──────────────────────────────────────── -->
+  <div class="card" id="wiz-step-1">
+    <div class="card-header"><span class="card-title">Step 1 of 3 — Basic Info</span></div>
+    <div class="card-body">
+
+      <div class="form-group">
+        <label class="form-label">Peer Name</label>
+        <input class="form-input" type="text" id="wiz-name"
+               placeholder="e.g. nauman-phone"
+               pattern="[a-zA-Z0-9_\-]{1,64}" autofocus>
+        <div class="form-hint">1–64 chars: letters, numbers, dash, underscore.</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Device Type</label>
+        <select class="form-select" id="wiz-device">
+          <option value="phone">📱 Phone</option>
+          <option value="laptop">💻 Laptop</option>
+          <option value="desktop">🖥 Desktop</option>
+          <option value="tablet">📋 Tablet</option>
+          <option value="router">🌐 Router/Server</option>
+          <option value="other" selected>◈ Unknown</option>
+        </select>
+      </div>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">DNS Server</label>
+          <input class="form-input" type="text" id="wiz-dns" value="{{ dns }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Server Endpoint</label>
+          <input class="form-input" type="text" id="wiz-endpoint" value="{{ endpoint }}">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Expires On <span class="text-dim">(optional)</span></label>
+        <input class="form-input" type="date" id="wiz-expires">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Notes <span class="text-dim">(optional)</span></label>
+        <textarea class="form-textarea" id="wiz-notes" rows="2"
+                  placeholder="e.g. iPhone 15 Pro, home office…"></textarea>
+      </div>
+
+      <div id="wiz-err-1" class="form-hint" style="color:var(--danger); display:none;"></div>
+
+      <div class="action-bar" style="margin-top:12px;">
+        <button class="btn btn-primary btn-lg" id="wiz-next-1">
+          Generate Config Preview →
+        </button>
+        <a href="{{ url_for('peers.list_peers') }}" class="btn btn-secondary">Cancel</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Step 2: Config preview ─────────────────────────────────── -->
+  <div class="card" id="wiz-step-2" style="display:none;">
+    <div class="card-header">
+      <span class="card-title">Step 2 of 3 — Config Preview</span>
+      <span id="wiz-vpn-ip" style="font-family:var(--mono); font-size:0.82rem; color:var(--text-muted);"></span>
+    </div>
+    <div class="card-body">
+      <p class="text-sm text-muted" style="margin-bottom:10px;">Review the generated config before saving. Nothing is written to the database yet.</p>
+      <pre id="wiz-config-pre" style="background:var(--surface-2); border:1px solid var(--border);
+           border-radius:var(--radius); padding:14px; font-size:0.78rem; overflow-x:auto;
+           white-space:pre; font-family:var(--mono); color:var(--text); margin-bottom:14px;"></pre>
+
+      <div id="wiz-err-2" class="form-hint" style="color:var(--danger); display:none;"></div>
+
+      <div class="action-bar">
+        <button class="btn btn-primary btn-lg" id="wiz-confirm">
+          ✓ Save Peer
+        </button>
+        <button class="btn btn-secondary" id="wiz-back-2">← Back</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Step 3: Done ───────────────────────────────────────────── -->
+  <div class="card" id="wiz-step-3" style="display:none;">
+    <div class="card-header">
+      <span class="card-title">Step 3 of 3 — Done!</span>
+    </div>
+    <div class="card-body" style="text-align:center;">
+      <div style="font-size:2.5rem; margin-bottom:8px;">✓</div>
+      <p class="text-sm text-muted" style="margin-bottom:16px;">Peer <strong id="wiz-done-name"></strong> created at <code id="wiz-done-ip"></code></p>
+
+      <div class="action-bar" style="justify-content:center; flex-wrap:wrap; gap:10px;">
+        <a id="wiz-view-btn" href="#" class="btn btn-primary">View Peer &amp; QR</a>
+        <a id="wiz-dl-btn"   href="#" class="btn btn-secondary">⬇ Download Config</a>
+        <button class="btn btn-secondary" id="wiz-add-another">+ Add Another</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  let _preview = null;
+
+  function show(stepNum) {
+    [1, 2, 3].forEach(n => {
+      document.getElementById('wiz-step-' + n).style.display = n === stepNum ? '' : 'none';
+      const ind = document.getElementById('step-ind-' + n);
+      ind.classList.toggle('active',    n === stepNum);
+      ind.classList.toggle('completed', n <  stepNum);
+    });
+  }
+
+  function setErr(id, msg) {
+    const el = document.getElementById(id);
+    el.textContent = msg;
+    el.style.display = msg ? '' : 'none';
+  }
+
+  /* Step 1 → 2: fetch preview */
+  document.getElementById('wiz-next-1').addEventListener('click', function () {
+    const name = document.getElementById('wiz-name').value.trim();
+    if (!name) { setErr('wiz-err-1', 'Peer name is required.'); return; }
+    setErr('wiz-err-1', '');
+    this.disabled    = true;
+    this.textContent = 'Generating…';
+
+    fetch('/peers/api/preview', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        name:       name,
+        device:     document.getElementById('wiz-device').value,
+        dns:        document.getElementById('wiz-dns').value.trim(),
+        endpoint:   document.getElementById('wiz-endpoint').value.trim(),
+        notes:      document.getElementById('wiz-notes').value.trim(),
+        expires_at: document.getElementById('wiz-expires').value,
+      }),
+    })
+    .then(r => r.json())
+    .then(d => {
+      this.disabled    = false;
+      this.textContent = 'Generate Config Preview →';
+      if (d.error) { setErr('wiz-err-1', d.error); return; }
+      _preview = d;
+      document.getElementById('wiz-config-pre').textContent = d.config;
+      document.getElementById('wiz-vpn-ip').textContent     = d.vpn_ip;
+      show(2);
+    })
+    .catch(() => {
+      this.disabled    = false;
+      this.textContent = 'Generate Config Preview →';
+      setErr('wiz-err-1', 'Request failed — check your connection.');
+    });
+  });
+
+  /* Step 2 back */
+  document.getElementById('wiz-back-2').addEventListener('click', () => show(1));
+
+  /* Step 2 confirm → create */
+  document.getElementById('wiz-confirm').addEventListener('click', function () {
+    if (!_preview) return;
+    setErr('wiz-err-2', '');
+    this.disabled    = true;
+    this.textContent = 'Saving…';
+
+    fetch('/peers/api/create', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        name:        _preview.name,
+        private_key: _preview.private_key,
+        public_key:  _preview.public_key,
+        psk:         _preview.psk,
+        vpn_ip:      _preview.vpn_ip,
+        dns:         _preview.dns,
+        endpoint:    _preview.endpoint,
+        device:      _preview.device,
+        notes:       _preview.notes,
+        expires_at:  _preview.expires_at,
+      }),
+    })
+    .then(r => r.json())
+    .then(d => {
+      this.disabled    = false;
+      this.textContent = '✓ Save Peer';
+      if (d.error) { setErr('wiz-err-2', d.error); return; }
+      document.getElementById('wiz-done-name').textContent = _preview.name;
+      document.getElementById('wiz-done-ip').textContent   = _preview.vpn_ip;
+      document.getElementById('wiz-view-btn').href = d.redirect;
+      document.getElementById('wiz-dl-btn').href   = d.redirect.replace(/\/(\d+)$/, '/$1/config');
+      show(3);
+    })
+    .catch(() => {
+      this.disabled    = false;
+      this.textContent = '✓ Save Peer';
+      setErr('wiz-err-2', 'Save failed — check your connection.');
+    });
+  });
+
+  /* Add another */
+  document.getElementById('wiz-add-another').addEventListener('click', () => {
+    _preview = null;
+    document.getElementById('wiz-name').value    = '';
+    document.getElementById('wiz-notes').value   = '';
+    document.getElementById('wiz-expires').value = '';
+    show(1);
+    document.getElementById('wiz-name').focus();
+  });
+})();
+</script>
+{% endblock %}

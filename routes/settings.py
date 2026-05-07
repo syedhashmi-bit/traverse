@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+from datetime import datetime
 from flask import Blueprint, make_response, render_template, request, redirect, url_for, flash
 from dotenv import load_dotenv
 load_dotenv()
@@ -11,6 +12,42 @@ from wireguard import (
 from routes.auth import login_required
 
 settings_bp = Blueprint('settings', __name__)
+
+PIHOLE_ENABLED = bool(os.getenv('PIHOLE_ENABLED'))
+PIHOLE_URL     = os.getenv('PIHOLE_URL', 'http://10.8.0.1:8080/admin')
+PIHOLE_PASS    = os.getenv('PIHOLE_PASSWORD', '')
+
+
+def _pihole_status_detail():
+    """Return detailed Pi-hole status dict for the settings page."""
+    if not PIHOLE_ENABLED:
+        return None
+    try:
+        r = subprocess.run(['pihole', 'status'], capture_output=True, text=True, timeout=8)
+        running  = 'FTL is listening' in r.stdout or 'Pi-hole blocking is enabled' in r.stdout
+        enabled  = 'Pi-hole blocking is enabled' in r.stdout
+        blocked  = None
+        gravity_updated = None
+        try:
+            import sqlite3 as _sql
+            gdb = '/etc/pihole/gravity.db'
+            if os.path.exists(gdb):
+                mtime = os.path.getmtime(gdb)
+                gravity_updated = datetime.utcfromtimestamp(mtime).strftime('%Y-%m-%d %H:%M UTC')
+                with _sql.connect(gdb) as gc:
+                    row = gc.execute('SELECT COUNT(*) FROM vw_gravity').fetchone()
+                    if row:
+                        blocked = row[0]
+        except Exception:
+            pass
+        return {
+            'running':         running,
+            'blocking_enabled': enabled,
+            'blocked_domains': blocked,
+            'gravity_updated': gravity_updated,
+        }
+    except Exception:
+        return {'running': False, 'blocking_enabled': False, 'blocked_domains': None, 'gravity_updated': None}
 
 
 @settings_bp.route('/')
@@ -41,6 +78,10 @@ def index():
         dns                = WG_DNS,
         totp_configured    = totp_configured,
         speedtest_results  = speedtest_results,
+        pihole_enabled     = PIHOLE_ENABLED,
+        pihole_status      = _pihole_status_detail(),
+        pihole_url         = PIHOLE_URL,
+        pihole_pass        = PIHOLE_PASS,
     )
 
 
@@ -92,6 +133,74 @@ def start_wg():
             flash(f'Start failed: {r.stderr}', 'error')
     except Exception as e:
         flash(f'Could not start WireGuard: {e}', 'error')
+    return redirect(url_for('settings.index'))
+
+
+@settings_bp.route('/pihole/enable', methods=['POST'])
+@login_required
+def pihole_enable():
+    if not PIHOLE_ENABLED:
+        flash('Pi-hole is not configured.', 'error')
+        return redirect(url_for('settings.index'))
+    try:
+        r = subprocess.run(['pihole', 'enable'], capture_output=True, text=True, timeout=15)
+        flash('Pi-hole blocking enabled.', 'success')
+    except Exception as e:
+        flash(f'Failed to enable Pi-hole: {e}', 'error')
+    return redirect(url_for('settings.index'))
+
+
+@settings_bp.route('/pihole/disable', methods=['POST'])
+@login_required
+def pihole_disable():
+    if not PIHOLE_ENABLED:
+        flash('Pi-hole is not configured.', 'error')
+        return redirect(url_for('settings.index'))
+    try:
+        r = subprocess.run(['pihole', 'disable'], capture_output=True, text=True, timeout=15)
+        flash('Pi-hole blocking disabled.', 'success')
+    except Exception as e:
+        flash(f'Failed to disable Pi-hole: {e}', 'error')
+    return redirect(url_for('settings.index'))
+
+
+_gravity_job = {'running': False, 'last_output': '', 'error': None}
+_gravity_lock = __import__('threading').Lock()
+
+
+def _run_gravity_bg():
+    import threading
+    try:
+        r = subprocess.run(
+            ['pihole', '-g'],
+            capture_output=True, text=True, timeout=300
+        )
+        with _gravity_lock:
+            _gravity_job.update({
+                'running': False,
+                'last_output': r.stdout[-2000:] if r.stdout else '',
+                'error': r.stderr[-500:] if r.returncode != 0 else None,
+            })
+    except Exception as exc:
+        with _gravity_lock:
+            _gravity_job.update({'running': False, 'last_output': '', 'error': str(exc)})
+
+
+@settings_bp.route('/pihole/update-gravity', methods=['POST'])
+@login_required
+def pihole_update_gravity():
+    if not PIHOLE_ENABLED:
+        flash('Pi-hole is not configured.', 'error')
+        return redirect(url_for('settings.index'))
+    with _gravity_lock:
+        if _gravity_job['running']:
+            flash('Gravity update already running.', 'warning')
+            return redirect(url_for('settings.index'))
+        _gravity_job['running'] = True
+    import threading
+    t = threading.Thread(target=_run_gravity_bg, daemon=True, name='gravity-update')
+    t.start()
+    flash('Gravity update started — this takes a minute. Reload the page to see the result.', 'info')
     return redirect(url_for('settings.index'))
 
 

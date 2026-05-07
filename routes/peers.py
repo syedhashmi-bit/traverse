@@ -1,16 +1,18 @@
 import io
 import os
 import re
+from dotenv import load_dotenv
+load_dotenv()
 from flask import (
     Blueprint, render_template, request, redirect,
-    url_for, flash, send_file, abort,
+    url_for, flash, send_file, abort, jsonify,
 )
 import qrcode
 from database import (
     get_all_peers, get_peer_by_id, get_peer_by_name,
     create_peer, set_peer_enabled, delete_peer, count_peers,
     update_peer_notes, update_peer_expiry, update_peer_keys,
-    get_peer_connection_events,
+    get_peer_connection_events, update_peer_pihole,
 )
 from wireguard import (
     generate_keypair, get_next_vpn_ip, get_server_public_key,
@@ -19,6 +21,10 @@ from wireguard import (
     WG_ENDPOINT, WG_DNS, WG_PORT,
 )
 from routes.auth import login_required
+
+PIHOLE_ENABLED = bool(os.getenv('PIHOLE_ENABLED'))
+PIHOLE_DNS     = '10.8.0.1'
+FALLBACK_DNS   = '1.1.1.1'
 
 peers_bp = Blueprint('peers', __name__)
 
@@ -32,6 +38,29 @@ def _safe_name(name):
 
 # ── List ─────────────────────────────────────────────────────────────────────
 
+def _last_seen(hs_raw):
+    """Return (label, css_class) for last-seen display from raw handshake timestamp."""
+    import time as _time
+    try:
+        ts = int(hs_raw or 0)
+    except (ValueError, TypeError):
+        ts = 0
+    if not ts:
+        return ('never', 'seen-never')
+    age = int(_time.time()) - ts
+    if age < 0:
+        age = 0
+    if age < 180:
+        return ('online now', 'seen-online')
+    if age < 3600:
+        return (f'{age // 60}m ago', 'seen-recent')
+    if age < 86400:
+        return (f'{age // 3600}h ago', 'seen-today')
+    if age < 604800:
+        return (f'{age // 86400}d ago', 'seen-week')
+    return (f'{age // 86400}d ago', 'seen-old')
+
+
 @peers_bp.route('/')
 @login_required
 def list_peers():
@@ -43,6 +72,7 @@ def list_peers():
         p['rx_fmt']         = format_bytes(p.get('rx_bytes') or 0)
         p['tx_fmt']         = format_bytes(p.get('tx_bytes') or 0)
         p['is_expired']     = bool(p.get('expires_at') and p['expires_at'] <= today)
+        p['last_seen_label'], p['last_seen_cls'] = _last_seen(p.get('last_handshake'))
     return render_template('peers/list.html', peers=peers)
 
 
@@ -122,6 +152,120 @@ def create():
     return redirect(url_for('peers.detail', peer_id=peer_id))
 
 
+# ── Wizard ───────────────────────────────────────────────────────────────────
+
+@peers_bp.route('/wizard')
+@login_required
+def wizard():
+    MAX_PEERS = 20
+    current_count = count_peers()
+    try:
+        next_ip = get_next_vpn_ip()
+    except ValueError:
+        next_ip = 'subnet exhausted'
+    return render_template(
+        'peers/wizard.html',
+        next_ip       = next_ip,
+        endpoint      = WG_ENDPOINT,
+        dns           = WG_DNS,
+        current_count = current_count,
+        max_peers     = MAX_PEERS,
+    )
+
+
+@peers_bp.route('/api/preview', methods=['POST'])
+@login_required
+def api_preview():
+    """Generate keys + config preview WITHOUT saving to DB."""
+    data     = request.get_json(silent=True) or {}
+    name     = data.get('name', '').strip()
+    dns      = data.get('dns', WG_DNS).strip()
+    endpoint = data.get('endpoint', WG_ENDPOINT).strip()
+    device   = data.get('device', 'other').strip()
+    notes    = data.get('notes', '').strip()
+    expires  = data.get('expires_at', '').strip()
+
+    if not _safe_name(name):
+        return jsonify({'error': 'Invalid peer name — 1–64 alphanumeric/dash/underscore chars.'}), 400
+    if get_peer_by_name(name):
+        return jsonify({'error': f'A peer named "{name}" already exists.'}), 409
+    if count_peers() >= 20:
+        return jsonify({'error': 'Peer limit reached (20 max).'}), 429
+
+    try:
+        vpn_ip = get_next_vpn_ip()
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+    try:
+        priv, pub, psk = generate_keypair()
+    except Exception as e:
+        return jsonify({'error': f'Key generation failed: {e}'}), 500
+
+    server_pub = get_server_public_key()
+    fake_peer = {
+        'name': name, 'private_key': priv, 'public_key': pub,
+        'preshared_key': psk, 'vpn_ip': vpn_ip,
+        'allowed_ips': '0.0.0.0/0', 'dns': dns,
+        'endpoint': endpoint, 'enabled': 1,
+    }
+    config_text = generate_client_config(fake_peer, server_pub)
+
+    return jsonify({
+        'name':       name,
+        'vpn_ip':     vpn_ip,
+        'private_key': priv,
+        'public_key':  pub,
+        'psk':         psk,
+        'config':      config_text,
+        'device':      device,
+        'notes':       notes,
+        'expires_at':  expires,
+        'dns':         dns,
+        'endpoint':    endpoint,
+    })
+
+
+@peers_bp.route('/api/create', methods=['POST'])
+@login_required
+def api_create():
+    """Create a peer from wizard — accepts JSON with pre-generated keys."""
+    data       = request.get_json(silent=True) or {}
+    name       = data.get('name', '').strip()
+    priv       = data.get('private_key', '').strip()
+    pub        = data.get('public_key', '').strip()
+    psk        = data.get('psk', '').strip()
+    vpn_ip     = data.get('vpn_ip', '').strip()
+    dns        = data.get('dns', WG_DNS).strip()
+    endpoint   = data.get('endpoint', WG_ENDPOINT).strip()
+    device     = data.get('device', 'other').strip()
+    notes      = data.get('notes', '').strip()
+    expires_at = data.get('expires_at', '').strip() or None
+
+    if not all([name, priv, pub, psk, vpn_ip]):
+        return jsonify({'error': 'Missing required fields.'}), 400
+    if not _safe_name(name):
+        return jsonify({'error': 'Invalid peer name.'}), 400
+    if get_peer_by_name(name):
+        return jsonify({'error': f'Peer "{name}" already exists.'}), 409
+    if count_peers() >= 20:
+        return jsonify({'error': 'Peer limit reached.'}), 429
+    if device not in _DEVICES:
+        device = 'other'
+
+    peer_id = create_peer(name=name, private_key=priv, public_key=pub,
+                          preshared_key=psk, vpn_ip=vpn_ip, dns=dns, endpoint=endpoint)
+    update_peer_notes(peer_id, notes, device)
+    if expires_at:
+        update_peer_expiry(peer_id, expires_at)
+    try:
+        add_peer_to_interface(pub, psk, vpn_ip)
+    except Exception:
+        pass
+
+    return jsonify({'ok': True, 'peer_id': peer_id, 'redirect': url_for('peers.detail', peer_id=peer_id)})
+
+
 # ── Detail ───────────────────────────────────────────────────────────────────
 
 @peers_bp.route('/<int:peer_id>')
@@ -141,11 +285,12 @@ def detail(peer_id):
     events = get_peer_connection_events(peer_id, limit=10)
     return render_template(
         'peers/detail.html',
-        peer        = peer,
-        server_pub  = server_pub,
-        config_text = config_text,
-        wg_port     = WG_PORT,
-        events      = events,
+        peer           = peer,
+        server_pub     = server_pub,
+        config_text    = config_text,
+        wg_port        = WG_PORT,
+        events         = events,
+        pihole_enabled = PIHOLE_ENABLED,
     )
 
 
@@ -280,3 +425,29 @@ def delete(peer_id):
     delete_peer(peer_id)
     flash(f'Peer "{peer["name"]}" deleted.', 'success')
     return redirect(url_for('peers.list_peers'))
+
+
+# ── Pi-hole DNS toggle ────────────────────────────────────────────────────────
+
+@peers_bp.route('/<int:peer_id>/toggle-pihole', methods=['POST'])
+@login_required
+def toggle_pihole(peer_id):
+    if not PIHOLE_ENABLED:
+        abort(404)
+    peer = get_peer_by_id(peer_id)
+    if not peer:
+        abort(404)
+    new_state = not bool(peer.get('use_pihole', 1))
+    update_peer_pihole(peer_id, new_state)
+    # Also update the dns field so existing config downloads reflect the change
+    from database import get_db
+    from datetime import datetime
+    new_dns = PIHOLE_DNS if new_state else FALLBACK_DNS
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE peers SET dns = ?, updated_at = ? WHERE id = ?",
+            (new_dns, datetime.utcnow().isoformat(), peer_id)
+        )
+    state_label = 'enabled' if new_state else 'disabled'
+    flash(f'Ad blocking (Pi-hole DNS) {state_label} for "{peer["name"]}".', 'success')
+    return redirect(url_for('peers.detail', peer_id=peer_id))

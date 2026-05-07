@@ -1,0 +1,107 @@
+{% extends 'base.html' %}
+{% block title %}Logs{% endblock %}
+{% block page_title %}System Logs{% endblock %}
+
+{% block content %}
+<div class="section-header mb-16">
+  <div>
+    <div class="section-title">System Logs</div>
+    <div class="section-sub">Last 100 lines from each service</div>
+  </div>
+</div>
+
+<div class="logs-grid">
+
+  <!-- traverse log -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Traverse App</span>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input type="text" id="filter-traverse" class="form-input" style="width:160px; padding:3px 8px; font-size:0.78rem;" placeholder="Filter…">
+        <button class="btn btn-secondary btn-sm" id="refresh-traverse">↺ Refresh</button>
+        <button class="btn btn-secondary btn-sm" id="live-traverse" data-live="0">◎ Live</button>
+      </div>
+    </div>
+    <pre id="log-traverse" class="log-box">Loading…</pre>
+  </div>
+
+  <!-- WireGuard log -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">WireGuard</span>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input type="text" id="filter-wireguard" class="form-input" style="width:160px; padding:3px 8px; font-size:0.78rem;" placeholder="Filter…">
+        <button class="btn btn-secondary btn-sm" id="refresh-wireguard">↺ Refresh</button>
+        <button class="btn btn-secondary btn-sm" id="live-wireguard" data-live="0">◎ Live</button>
+      </div>
+    </div>
+    <pre id="log-wireguard" class="log-box">Loading…</pre>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  const sources = ['traverse', 'wireguard'];
+  const liveIntervals = {};
+
+  function colorLine(line) {
+    if (/error/i.test(line))   return `<span style="color:var(--danger);">${esc(line)}</span>`;
+    if (/warn/i.test(line))    return `<span style="color:var(--warning);">${esc(line)}</span>`;
+    if (/\binfo\b/i.test(line)) return `<span style="color:var(--info);">${esc(line)}</span>`;
+    return esc(line);
+  }
+
+  function esc(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function applyFilter(src) {
+    const pre    = document.getElementById('log-' + src);
+    const filter = document.getElementById('filter-' + src).value.toLowerCase();
+    const lines  = (pre._rawLines || '').split('\n');
+    const shown  = filter ? lines.filter(l => l.toLowerCase().includes(filter)) : lines;
+    pre.innerHTML = shown.map(colorLine).join('\n');
+    pre.scrollTop = pre.scrollHeight;
+  }
+
+  function fetchLog(src) {
+    const pre = document.getElementById('log-' + src);
+    fetch('/api/logs/' + src)
+      .then(r => r.json())
+      .then(d => {
+        pre._rawLines = d.lines || '';
+        applyFilter(src);
+      })
+      .catch(() => { pre.innerHTML = 'Failed to load.'; });
+  }
+
+  sources.forEach(src => {
+    fetchLog(src);
+
+    document.getElementById('filter-' + src).addEventListener('input', () => applyFilter(src));
+
+    document.getElementById('refresh-' + src).addEventListener('click', () => fetchLog(src));
+
+    document.getElementById('live-' + src).addEventListener('click', function () {
+      const on = this.dataset.live === '1';
+      if (on) {
+        clearInterval(liveIntervals[src]);
+        this.dataset.live    = '0';
+        this.textContent     = '◎ Live';
+        this.style.color     = '';
+        this.style.borderColor = '';
+      } else {
+        liveIntervals[src]   = setInterval(() => fetchLog(src), 5000);
+        this.dataset.live    = '1';
+        this.textContent     = '● Live';
+        this.style.color     = 'var(--success)';
+        this.style.borderColor = 'var(--success)';
+      }
+    });
+  });
+})();
+</script>
+{% endblock %}
