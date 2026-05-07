@@ -199,7 +199,12 @@
             </tbody>
           </table>
           {% else %}
-          <div class="noc-empty">No peers — <a href="{{ url_for('peers.create') }}" class="noc-link">add one</a></div>
+          <div class="empty-state-friendly" style="padding:32px 16px;">
+            <div class="empty-state-icon-lg">🔒</div>
+            <div class="empty-state-heading">No peers yet</div>
+            <div class="empty-state-sub">Add your first device to get started.</div>
+            <a href="{{ url_for('peers.create') }}" class="btn btn-primary" style="margin-top:14px;">+ Add Peer</a>
+          </div>
           {% endif %}
         </div>
       </div>

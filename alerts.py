@@ -11,6 +11,24 @@ _wg_was_down      = False
 _last_wg_alert    = 0.0
 _peer_alerted_at  = {}    # public_key -> unix ts of last alert
 _peer_last_active = {}    # public_key -> bool (was active last check)
+_peer_last_ip     = {}    # peer_id -> last endpoint IP seen
+
+
+def _extract_ip_port(endpoint):
+    """Parse (ip, port) from a WireGuard endpoint string. Returns (None, None) on failure."""
+    if not endpoint or endpoint == '(none)':
+        return None, None
+    if endpoint.startswith('['):
+        # IPv6: [addr]:port
+        try:
+            host, _, port_part = endpoint[1:].partition(']:')
+            return host, int(port_part) if port_part.isdigit() else None
+        except Exception:
+            return None, None
+    host, _, port_part = endpoint.rpartition(':')
+    if host and port_part.isdigit():
+        return host, int(port_part)
+    return endpoint, None
 
 
 def _send(msg):
@@ -95,6 +113,40 @@ def _check():
                     log_connection_event(peer_id, 'disconnected', vpn_ip)
             _peer_last_active[pub] = is_active
         trim_connection_events(1000)
+    except Exception:
+        pass
+
+    # ── Endpoint location tracking ────────────────────────────────────────
+    try:
+        from database import record_peer_location
+        # Lazy import to avoid circular dep with routes.map
+        from routes.map import _geolocate_ip
+        for peer in peers:
+            peer_id   = peer['id']
+            pub       = peer['public_key']
+            live_info = live.get(pub, {})
+            endpoint  = live_info.get('endpoint', '') or ''
+            if not endpoint:
+                continue
+            ip, port = _extract_ip_port(endpoint)
+            if not ip:
+                continue
+            if _peer_last_ip.get(peer_id) == ip:
+                # Same IP — bump last_seen_at without geo lookup
+                record_peer_location(peer_id, ip, endpoint_port=port)
+                continue
+            _peer_last_ip[peer_id] = ip
+            # New IP for this peer — try geo lookup, but don't block on failure
+            geo = _geolocate_ip(ip)
+            if geo:
+                record_peer_location(
+                    peer_id, ip, endpoint_port=port,
+                    geo_country=geo.get('country'), geo_city=geo.get('city'),
+                    geo_lat=geo.get('lat'), geo_lon=geo.get('lon'),
+                    geo_country_code=geo.get('country_code'),
+                )
+            else:
+                record_peer_location(peer_id, ip, endpoint_port=port)
     except Exception:
         pass
 

@@ -18,6 +18,13 @@
         <button type="submit" class="btn btn-success">● Enable</button>
       {% endif %}
     </form>
+    {% if peer.enabled %}
+    <button type="button" class="btn btn-danger" id="kill-btn"
+            data-peer-id="{{ peer.id }}" data-peer-name="{{ peer.name }}"
+            title="Immediately disconnect this peer from wg0 and disable">
+      ⚡ Kill
+    </button>
+    {% endif %}
     <button type="button" class="btn btn-secondary" onclick="document.getElementById('regen-modal').style.display='flex'">
       ↺ Regenerate Config
     </button>
@@ -44,7 +51,7 @@
         </div>
         <div class="detail-field">
           <div class="detail-label">VPN IP</div>
-          <div class="detail-value mono">{{ peer.vpn_ip }}/32</div>
+          <div class="detail-value mono">{{ peer.vpn_ip }}/32<button type="button" class="copy-icon-btn" title="Copy VPN IP" onclick="copyText('{{ peer.vpn_ip }}', this)">⎘</button></div>
         </div>
         <div class="detail-field">
           <div class="detail-label">DNS</div>
@@ -193,6 +200,56 @@
           <canvas id="hist-chart"></canvas>
         </div>
       </div>
+    </div>
+
+    <!-- Location History -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Location History</span>
+        <span class="text-xs text-muted">
+          {% if location_total > 1 %}{{ location_total }} location{{ 's' if location_total != 1 }} on record{% endif %}
+        </span>
+      </div>
+      {% if location_total <= 1 %}
+      <div class="card-body text-sm text-dim">
+        {% if location_total == 0 %}
+          No endpoints recorded yet — connect at least once for tracking to begin.
+        {% else %}
+          No location changes recorded — peer always connects from the same endpoint.
+        {% endif %}
+      </div>
+      {% else %}
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:32px;"></th>
+              <th>Place</th>
+              <th>Endpoint</th>
+              <th>First seen</th>
+              <th>Last seen</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for loc in locations %}
+            <tr>
+              <td style="text-align:center; font-size:1.1em;">{{ loc.flag }}</td>
+              <td class="text-sm">
+                {% if loc.geo_city or loc.geo_country %}
+                  {{ loc.geo_city }}{% if loc.geo_city and loc.geo_country %}, {% endif %}{{ loc.geo_country }}
+                {% else %}
+                  <span class="text-dim">unknown</span>
+                {% endif %}
+              </td>
+              <td class="td-mono text-xs text-dim">{{ loc.masked_ip }}</td>
+              <td class="text-xs text-muted loc-rel" data-ts="{{ loc.first_seen_at }}">{{ loc.first_seen_at[:16] }}</td>
+              <td class="text-xs text-muted loc-rel" data-ts="{{ loc.last_seen_at }}">{{ loc.last_seen_at[:16] }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
     </div>
 
     <!-- Connection History -->
@@ -410,6 +467,59 @@
 {% endblock %}
 
 {% block extra_js %}
+<script>
+/* ── Location history — relative timestamps ────────────────────────── */
+(function () {
+  function rel(iso) {
+    if (!iso) return '';
+    const s = (iso.endsWith('Z') || iso.match(/[+-]\d{2}:\d{2}$/)) ? iso : iso + 'Z';
+    const t = Date.parse(s);
+    if (!isFinite(t)) return iso.slice(0, 16);
+    const age = Math.floor((Date.now() - t) / 1000);
+    if (age < 60)    return 'just now';
+    if (age < 3600)  return Math.floor(age / 60) + 'm ago';
+    if (age < 86400) return Math.floor(age / 3600) + 'h ago';
+    if (age < 604800) return Math.floor(age / 86400) + 'd ago';
+    return iso.slice(0, 10);
+  }
+  document.querySelectorAll('.loc-rel').forEach(el => {
+    const ts = el.dataset.ts;
+    if (ts) el.textContent = rel(ts);
+  });
+})();
+</script>
+<script>
+/* ── Kill button ───────────────────────────────────────────────────── */
+(function () {
+  const btn = document.getElementById('kill-btn');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    const name = btn.dataset.peerName;
+    const id   = btn.dataset.peerId;
+    if (!confirm(`Kill peer "${name}"?\n\nThey will be immediately removed from wg0 and disabled. The peer record will be preserved — you can re-enable later.`)) return;
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = '⟳ killing…';
+    fetch('/api/peer/' + id + '/kill', { method: 'POST', credentials: 'same-origin' })
+      .then(r => r.json())
+      .then(d => {
+        if (d.ok) {
+          alert(`Peer "${d.peer_name}" killed. They have been disconnected and disabled.`);
+          window.location.reload();
+        } else {
+          btn.disabled = false;
+          btn.textContent = orig;
+          alert('Kill failed: ' + (d.error || 'unknown error'));
+        }
+      })
+      .catch(e => {
+        btn.disabled = false;
+        btn.textContent = orig;
+        alert('Kill request failed: ' + e);
+      });
+  });
+})();
+</script>
 <script src="{{ url_for('static', filename='js/chart.min.js') }}"></script>
 <script>
 /* ── 30-Day bandwidth history chart ─────────────────────────────────── */

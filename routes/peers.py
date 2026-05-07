@@ -13,11 +13,14 @@ from database import (
     create_peer, set_peer_enabled, delete_peer, count_peers,
     update_peer_notes, update_peer_expiry, update_peer_keys,
     get_peer_connection_events, update_peer_pihole,
+    get_peers_last_connect_ts,
+    get_peer_locations, count_peer_locations,
 )
 from wireguard import (
     generate_keypair, get_next_vpn_ip, get_server_public_key,
     add_peer_to_interface, remove_peer_from_interface,
     generate_client_config, format_bytes, format_handshake,
+    is_peer_active,
     WG_ENDPOINT, WG_DNS, WG_PORT,
 )
 from routes.auth import login_required
@@ -67,12 +70,15 @@ def list_peers():
     from datetime import datetime
     today = datetime.utcnow().strftime('%Y-%m-%d')
     peers = get_all_peers()
+    last_connects = get_peers_last_connect_ts()
     for p in peers:
         raw_hs = p.get('last_handshake')  # raw Unix timestamp string — save BEFORE formatting
         p['last_handshake'] = format_handshake(raw_hs)
         p['rx_fmt']         = format_bytes(p.get('rx_bytes') or 0)
         p['tx_fmt']         = format_bytes(p.get('tx_bytes') or 0)
         p['is_expired']     = bool(p.get('expires_at') and p['expires_at'] <= today)
+        p['is_active']      = bool(p.get('enabled')) and is_peer_active(raw_hs)
+        p['session_start']  = last_connects.get(p['id']) if p['is_active'] else None
         p['last_seen_label'], p['last_seen_cls'] = _last_seen(raw_hs)
     return render_template('peers/list.html', peers=peers)
 
@@ -284,14 +290,38 @@ def detail(peer_id):
     today = datetime.utcnow().strftime('%Y-%m-%d')
     peer['is_expired'] = bool(peer.get('expires_at') and peer['expires_at'] <= today)
     events = get_peer_connection_events(peer_id, limit=10)
+
+    locations       = get_peer_locations(peer_id, limit=5)
+    location_total  = count_peer_locations(peer_id)
+    # Helpers for template
+    def _flag(cc):
+        if not cc or len(cc) != 2:
+            return '🌍'
+        return ''.join(chr(ord(c.upper()) + 127397) for c in cc)
+    def _mask(ip):
+        if not ip:
+            return ''
+        if ':' in ip:
+            parts = ip.split(':')
+            return ':'.join(parts[:3]) + ':x:x:x:x:x' if len(parts) >= 3 else ip
+        parts = ip.split('.')
+        if len(parts) == 4:
+            return f'{parts[0]}.{parts[1]}.x.x'
+        return ip
+    for loc in locations:
+        loc['flag']      = _flag(loc.get('geo_country_code'))
+        loc['masked_ip'] = _mask(loc.get('endpoint_ip'))
+
     return render_template(
         'peers/detail.html',
-        peer           = peer,
-        server_pub     = server_pub,
-        config_text    = config_text,
-        wg_port        = WG_PORT,
-        events         = events,
-        pihole_enabled = PIHOLE_ENABLED,
+        peer            = peer,
+        server_pub      = server_pub,
+        config_text     = config_text,
+        wg_port         = WG_PORT,
+        events          = events,
+        pihole_enabled  = PIHOLE_ENABLED,
+        locations       = locations,
+        location_total  = location_total,
     )
 
 

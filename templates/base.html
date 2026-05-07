@@ -91,12 +91,14 @@
     <span class="page-title">{% block page_title %}Traverse{% endblock %}</span>
     <div class="topbar-right">
       <a href="{{ url_for('peers.create') }}" class="btn btn-primary btn-sm">+ Add Peer</a>
+      <button id="sound-toggle" class="btn btn-ghost btn-sm" title="Sound alerts">🔕</button>
+      <button id="help-toggle" class="btn btn-ghost btn-sm" title="Help">?</button>
       <button id="theme-toggle" class="btn btn-ghost btn-sm theme-toggle-btn" title="Toggle theme">☾</button>
       <a href="{{ url_for('auth.logout') }}" class="btn btn-ghost btn-sm">Sign Out</a>
     </div>
   </header>
 
-  <div class="content">
+  <div class="content page-content">
     {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
     <div class="flash-list">
@@ -147,7 +149,79 @@
   </a>
 </nav>
 
+<!-- ── Help overlay ─────────────────────────────────────────────────── -->
+<div id="help-overlay" class="help-overlay" style="display:none;" aria-hidden="true">
+  <div class="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title">
+    <div class="help-hdr">
+      <span id="help-title" class="help-title">⌁ Traverse — Help</span>
+      <button type="button" class="help-close" id="help-close" aria-label="Close">×</button>
+    </div>
+    <div class="help-body">
+      <div class="help-section">
+        <div class="help-section-title">Tips</div>
+        <ul class="help-list">
+          <li>Click any peer row to open its detail page</li>
+          <li>Use the search box to filter peers by name, IP, or device</li>
+          <li>The dashboard chart shows live RX/TX over the last 15 min</li>
+          <li>Hover the WG status dot in the sidebar to see the interface state</li>
+          <li>Sound &amp; browser notifications fire on connect / disconnect — toggle with 🔔</li>
+        </ul>
+      </div>
+
+      <div class="help-section">
+        <div class="help-section-title">Pages</div>
+        <ul class="help-list">
+          <li><a href="{{ url_for('dashboard.index') }}">Dashboard</a> — live overview &amp; chart</li>
+          <li><a href="{{ url_for('peers.list_peers') }}">Peers</a> — full list, search, kill, sparklines</li>
+          <li><a href="{{ url_for('map.map_view') }}">Map</a> — peer geo locations</li>
+          <li><a href="{{ url_for('alerts.alerts_view') }}">Alerts</a> — WG / bandwidth / expiry alerts</li>
+          <li><a href="{{ url_for('history.history_view') }}">History</a> — connection events</li>
+          <li><a href="{{ url_for('logs.logs_view') }}">Logs</a> — system logs</li>
+          <li><a href="{{ url_for('about.about') }}">About</a> — version &amp; changelog</li>
+        </ul>
+      </div>
+
+      <div class="help-section">
+        <div class="help-section-title">Quick Stats</div>
+        <div class="help-stats">
+          <div><span class="help-k">Peers</span><span class="help-v">{{ app_peer_total }}</span></div>
+          <div><span class="help-k">VPN subnet</span><span class="help-v mono">{{ app_wg_subnet }}</span></div>
+          <div><span class="help-k">Server endpoint</span><span class="help-v mono">{{ app_wg_endpoint }}</span></div>
+          <div><span class="help-k">Version</span><span class="help-v mono">{{ app_version }}</span></div>
+        </div>
+      </div>
+
+      {% if app_pihole_enabled %}
+      <div class="help-section">
+        <div class="help-section-title">Pi-hole</div>
+        <p class="help-note">
+          <a href="{{ app_pihole_url }}" target="_blank" rel="noopener">Open Pi-hole admin →</a>
+          <span class="text-dim">(must be connected to the VPN)</span>
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
 <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script>
+/* ── Help overlay controller ──────────────────────────────────────── */
+(function () {
+  const overlay = document.getElementById('help-overlay');
+  const btn     = document.getElementById('help-toggle');
+  const closeB  = document.getElementById('help-close');
+  if (!overlay || !btn) return;
+  function show() { overlay.style.display = 'flex'; overlay.setAttribute('aria-hidden', 'false'); }
+  function hide() { overlay.style.display = 'none'; overlay.setAttribute('aria-hidden', 'true'); }
+  btn.addEventListener('click', show);
+  if (closeB) closeB.addEventListener('click', hide);
+  overlay.addEventListener('click', e => { if (e.target === overlay) hide(); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && overlay.style.display !== 'none') hide();
+  });
+})();
+</script>
 {% block extra_js %}{% endblock %}
 </body>
 </html>

@@ -127,6 +127,23 @@ def migrate_db():
         """)
 
         conn.execute("""
+            CREATE TABLE IF NOT EXISTS peer_locations (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                peer_id       INTEGER NOT NULL,
+                endpoint_ip   TEXT    NOT NULL,
+                endpoint_port INTEGER,
+                geo_country   TEXT,
+                geo_city      TEXT,
+                geo_lat       REAL,
+                geo_lon       REAL,
+                geo_country_code TEXT,
+                first_seen_at TEXT    NOT NULL,
+                last_seen_at  TEXT    NOT NULL,
+                FOREIGN KEY (peer_id) REFERENCES peers(id) ON DELETE CASCADE
+            )
+        """)
+
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS speedtest_results (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
                 download_mbps REAL    NOT NULL,
@@ -342,6 +359,35 @@ def get_peer_connection_events(peer_id, limit=10):
     return [dict(r) for r in rows]
 
 
+def get_recent_connection_events(seconds=70):
+    """Return events whose timestamp is within the last `seconds`, with peer name/device."""
+    from datetime import datetime, timedelta
+    cutoff = (datetime.utcnow() - timedelta(seconds=seconds)).isoformat()
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT ce.id, ce.peer_id, ce.event_type, ce.timestamp, ce.peer_vpn_ip,
+                   COALESCE(p.name, '[deleted]') AS peer_name,
+                   COALESCE(p.device, 'other')   AS peer_device
+              FROM connection_events ce
+              LEFT JOIN peers p ON p.id = ce.peer_id
+             WHERE ce.timestamp >= ?
+             ORDER BY ce.id DESC
+        """, (cutoff,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_peers_last_connect_ts():
+    """Return dict {peer_id: iso_timestamp} of most recent 'connected' event per peer."""
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT peer_id, MAX(timestamp) AS ts
+              FROM connection_events
+             WHERE event_type = 'connected'
+             GROUP BY peer_id
+        """).fetchall()
+    return {r['peer_id']: r['ts'] for r in rows}
+
+
 def trim_connection_events(max_rows=1000):
     with get_db() as conn:
         count = conn.execute("SELECT COUNT(*) FROM connection_events").fetchone()[0]
@@ -491,6 +537,63 @@ def get_speedtest_results(limit=5):
             "SELECT * FROM speedtest_results ORDER BY tested_at DESC LIMIT ?", (limit,)
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def record_peer_location(peer_id, endpoint_ip, endpoint_port=None,
+                         geo_country=None, geo_city=None,
+                         geo_lat=None, geo_lon=None, geo_country_code=None):
+    """Insert new location row, or update last_seen_at if (peer_id, endpoint_ip) already exists.
+    Caps at 10 most-recent rows per peer."""
+    from datetime import datetime
+    now = datetime.utcnow().isoformat()
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT id FROM peer_locations WHERE peer_id = ? AND endpoint_ip = ?",
+            (peer_id, endpoint_ip)
+        ).fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE peer_locations SET last_seen_at = ? WHERE id = ?",
+                (now, existing['id'])
+            )
+            return False  # not a new location
+        conn.execute("""
+            INSERT INTO peer_locations
+                (peer_id, endpoint_ip, endpoint_port,
+                 geo_country, geo_city, geo_lat, geo_lon, geo_country_code,
+                 first_seen_at, last_seen_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (peer_id, endpoint_ip, endpoint_port,
+              geo_country, geo_city, geo_lat, geo_lon, geo_country_code,
+              now, now))
+        # Cap to 10 records per peer (delete oldest by last_seen_at)
+        count = conn.execute(
+            "SELECT COUNT(*) FROM peer_locations WHERE peer_id = ?", (peer_id,)
+        ).fetchone()[0]
+        if count > 10:
+            conn.execute("""
+                DELETE FROM peer_locations WHERE id IN (
+                    SELECT id FROM peer_locations WHERE peer_id = ?
+                     ORDER BY last_seen_at ASC LIMIT ?
+                )
+            """, (peer_id, count - 10))
+        return True
+
+
+def get_peer_locations(peer_id, limit=5):
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT * FROM peer_locations WHERE peer_id = ?
+             ORDER BY last_seen_at DESC LIMIT ?
+        """, (peer_id, limit)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def count_peer_locations(peer_id):
+    with get_db() as conn:
+        return conn.execute(
+            "SELECT COUNT(*) FROM peer_locations WHERE peer_id = ?", (peer_id,)
+        ).fetchone()[0]
 
 
 def get_last_speedtest():

@@ -191,6 +191,63 @@ def peer_ping(peer_id):
         return jsonify({'reachable': False, 'reason': str(e)})
 
 
+@api_bp.route('/api/peer/<int:peer_id>/kill', methods=['POST'])
+@login_required
+def peer_kill(peer_id):
+    """Immediately remove peer from wg0 and disable in DB. Peer record is preserved."""
+    from database import get_peer_by_id, set_peer_enabled, log_connection_event
+    from wireguard import remove_peer_from_interface
+    peer = get_peer_by_id(peer_id)
+    if not peer:
+        return jsonify({'error': 'not found'}), 404
+    try:
+        remove_peer_from_interface(peer['public_key'])
+    except Exception as e:
+        return jsonify({'error': f'wg remove failed: {e}'}), 500
+    set_peer_enabled(peer_id, False)
+    try:
+        log_connection_event(peer_id, 'killed', peer['vpn_ip'])
+    except Exception:
+        pass
+    return jsonify({'ok': True, 'peer_name': peer['name'], 'peer_id': peer_id})
+
+
+@api_bp.route('/api/events/latest')
+@login_required
+def events_latest():
+    """Return connection events from the last ~70 seconds (slightly > poll interval)."""
+    from database import get_recent_connection_events
+    return jsonify({'events': get_recent_connection_events(seconds=70)})
+
+
+@api_bp.route('/api/peer/<int:peer_id>/sparkline')
+@login_required
+def peer_sparkline(peer_id):
+    """Return last 10 bytes/sec rate values for the peer (oldest→newest)."""
+    from datetime import datetime as dt
+    from database import get_peer_by_id, get_peer_bandwidth_snapshots
+    peer = get_peer_by_id(peer_id)
+    if not peer:
+        return jsonify({'error': 'not found'}), 404
+    snaps = get_peer_bandwidth_snapshots(peer_id, limit=11)
+    values = []
+    if len(snaps) >= 2:
+        for i in range(1, len(snaps)):
+            prev, curr = snaps[i - 1], snaps[i]
+            try:
+                t1 = dt.fromisoformat(prev['recorded_at'])
+                t2 = dt.fromisoformat(curr['recorded_at'])
+                secs = (t2 - t1).total_seconds()
+                if secs <= 0:
+                    continue
+                rx = max(0.0, (curr['rx_bytes'] - prev['rx_bytes']) / secs)
+                tx = max(0.0, (curr['tx_bytes'] - prev['tx_bytes']) / secs)
+                values.append(round(rx + tx, 1))
+            except Exception:
+                continue
+    return jsonify({'peer_id': peer_id, 'values': values})
+
+
 @api_bp.route('/api/peer/<int:peer_id>/bandwidth')
 @login_required
 def peer_bandwidth(peer_id):

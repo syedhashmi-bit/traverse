@@ -6,9 +6,18 @@
 <div class="section-header">
   <div>
     <div class="section-title">All Peers</div>
-    <div class="section-sub">{{ peers|length }} registered client{{ 's' if peers|length != 1 }}</div>
+    <div class="section-sub" id="peer-count-sub">{{ peers|length }} registered client{{ 's' if peers|length != 1 }}</div>
   </div>
-  <a href="{{ url_for('peers.create') }}" class="btn btn-primary">+ Add Peer</a>
+  <div class="action-bar" style="gap:10px;">
+    {% if peers %}
+    <div class="peer-search-wrap">
+      <input type="text" id="peer-search" class="peer-search-input"
+             placeholder="Search name, IP, device…" autocomplete="off">
+      <button type="button" id="peer-search-clear" class="peer-search-clear" title="Clear" style="display:none;">×</button>
+    </div>
+    {% endif %}
+    <a href="{{ url_for('peers.create') }}" class="btn btn-primary">+ Add Peer</a>
+  </div>
 </div>
 
 {% if peers %}
@@ -23,7 +32,9 @@
         <th>DNS</th>
         <th>Status</th>
         <th>Last Seen</th>
+        <th>Session</th>
         <th>RX / TX</th>
+        <th>Traffic</th>
         <th>Expires</th>
         <th>Created</th>
         <th>Actions</th>
@@ -31,7 +42,11 @@
     </thead>
     <tbody>
       {% for peer in peers %}
-      <tr>
+      <tr class="clickable-row peer-row"
+          data-href="{{ url_for('peers.detail', peer_id=peer.id) }}"
+          data-name="{{ peer.name|lower }}"
+          data-ip="{{ peer.vpn_ip }}"
+          data-device="{{ (peer.device or 'other')|lower }}">
         <td class="td-mono text-dim">{{ peer.id }}</td>
         <td>
           <a href="{{ url_for('peers.detail', peer_id=peer.id) }}"
@@ -59,8 +74,19 @@
           {% endif %}
         </td>
         <td><span class="last-seen {{ peer.last_seen_cls }}">{{ peer.last_seen_label }}</span></td>
+        <td class="td-mono text-xs session-cell"
+            data-session-start="{{ peer.session_start or '' }}">
+          {% if peer.session_start %}…{% else %}—{% endif %}
+        </td>
         <td class="td-mono text-xs">
           ↓ {{ peer.rx_fmt }}<br>↑ {{ peer.tx_fmt }}
+        </td>
+        <td>
+          <canvas class="peer-spark"
+                  data-peer-id="{{ peer.id }}"
+                  data-active="{{ '1' if peer.is_active else '0' }}"
+                  width="120" height="32"
+                  style="width:60px; height:20px; vertical-align:middle;"></canvas>
         </td>
         <td class="text-xs {% if peer.is_expired %}text-warning{% else %}text-dim{% endif %}">
           {{ peer.expires_at or '—' }}
@@ -68,28 +94,221 @@
         <td class="text-xs text-dim">{{ peer.created_at[:10] }}</td>
         <td>
           <div class="action-bar">
-            <a href="{{ url_for('peers.detail', peer_id=peer.id) }}"
-               class="btn btn-secondary btn-sm">View</a>
             <a href="{{ url_for('peers.qr_page', peer_id=peer.id) }}"
                class="btn btn-secondary btn-sm" title="QR Code">QR</a>
+            {% if peer.enabled %}
+            <button type="button" class="btn btn-sm row-kill-btn"
+                    data-peer-id="{{ peer.id }}" data-peer-name="{{ peer.name }}"
+                    title="Kill — disconnect & disable"
+                    style="color:var(--danger); border-color:var(--danger);">⚡</button>
+            {% endif %}
           </div>
         </td>
       </tr>
       {% endfor %}
+      <tr id="peer-search-empty" style="display:none;">
+        <td colspan="13" style="padding:24px; text-align:center; color:var(--text-muted);">
+          🔍 No peers match <span id="peer-search-term" class="mono"></span>
+        </td>
+      </tr>
     </tbody>
   </table>
 </div>
 {% else %}
 <div class="card">
-  <div class="empty-state">
-    <div class="empty-state-icon">◈</div>
-    <div class="empty-state-text">
-      No peers yet.<br>
-      <a href="{{ url_for('peers.create') }}" style="color:var(--accent);">
-        Create your first VPN peer
-      </a>
-    </div>
+  <div class="empty-state-friendly">
+    <div class="empty-state-icon-lg">🔒</div>
+    <div class="empty-state-heading">No peers yet</div>
+    <div class="empty-state-sub">Add your first device to get started.</div>
+    <a href="{{ url_for('peers.create') }}" class="btn btn-primary btn-lg" style="margin-top:18px;">
+      + Add Peer
+    </a>
   </div>
 </div>
 {% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+/* ── Clickable peer rows ───────────────────────────────────────────── */
+(function () {
+  document.querySelectorAll('tr.clickable-row').forEach(tr => {
+    tr.addEventListener('click', e => {
+      if (e.target.closest('a, button, form, input, select, textarea, [data-no-row-click]')) return;
+      const href = tr.getAttribute('data-href');
+      if (href) window.location.href = href;
+    });
+  });
+})();
+
+/* ── Per-row Kill button ───────────────────────────────────────────── */
+(function () {
+  document.querySelectorAll('.row-kill-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();   // don't trigger row click
+      const name = btn.dataset.peerName;
+      const id   = btn.dataset.peerId;
+      if (!confirm(`Kill peer "${name}"?\nDisconnect them from wg0 immediately and disable.`)) return;
+      btn.disabled = true;
+      const orig = btn.textContent;
+      btn.textContent = '…';
+      fetch('/api/peer/' + id + '/kill', { method: 'POST', credentials: 'same-origin' })
+        .then(r => r.json())
+        .then(d => {
+          if (d.ok) window.location.reload();
+          else {
+            btn.disabled = false;
+            btn.textContent = orig;
+            alert('Kill failed: ' + (d.error || 'unknown'));
+          }
+        })
+        .catch(err => {
+          btn.disabled = false;
+          btn.textContent = orig;
+          alert('Kill request failed: ' + err);
+        });
+    });
+  });
+})();
+
+/* ── Session duration timer ────────────────────────────────────────── */
+(function () {
+  function fmtDur(secs) {
+    if (secs < 0) secs = 0;
+    if (secs < 60)   return secs + 's';
+    if (secs < 3600) return Math.floor(secs / 60) + 'm';
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  }
+  function parseUtc(iso) {
+    if (!iso) return null;
+    // DB writes naive UTC ISO strings like "2026-05-07T05:20:00.123456" — append Z to force UTC parse
+    const s = (iso.endsWith('Z') || iso.match(/[+-]\d{2}:\d{2}$/)) ? iso : iso + 'Z';
+    const t = Date.parse(s);
+    return isFinite(t) ? t : null;
+  }
+  function update() {
+    document.querySelectorAll('.session-cell').forEach(el => {
+      const ts = el.dataset.sessionStart;
+      if (!ts) { el.textContent = '—'; return; }
+      const start = parseUtc(ts);
+      if (!start) { el.textContent = '—'; return; }
+      const secs = Math.floor((Date.now() - start) / 1000);
+      el.textContent = fmtDur(secs);
+    });
+  }
+  update();
+  setInterval(update, 60000);
+})();
+
+/* ── Per-peer sparklines ───────────────────────────────────────────── */
+(function () {
+  function drawSpark(canvas, values, isActive) {
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    ctx.clearRect(0, 0, W, H);
+    const color = isActive ? '#22c55e' : '#5a6278';
+    if (!values || values.length === 0) {
+      // Flat grey baseline
+      ctx.strokeStyle = '#5a6278';
+      ctx.globalAlpha = 0.4;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(2, H / 2);
+      ctx.lineTo(W - 2, H / 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      return;
+    }
+    const max = Math.max(...values, 1);
+    const min = 0;
+    const dx  = (W - 4) / Math.max(1, values.length - 1);
+    const yOf = v => H - 3 - ((v - min) / (max - min || 1)) * (H - 6);
+
+    // Fill
+    ctx.beginPath();
+    ctx.moveTo(2, H - 2);
+    values.forEach((v, i) => ctx.lineTo(2 + i * dx, yOf(v)));
+    ctx.lineTo(2 + (values.length - 1) * dx, H - 2);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.18;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Line
+    ctx.beginPath();
+    values.forEach((v, i) => {
+      const x = 2 + i * dx, y = yOf(v);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  function loadAll() {
+    document.querySelectorAll('canvas.peer-spark').forEach(c => {
+      const id     = c.dataset.peerId;
+      const active = c.dataset.active === '1';
+      fetch('/api/peer/' + id + '/sparkline')
+        .then(r => r.json())
+        .then(d => drawSpark(c, d.values || [], active))
+        .catch(() => drawSpark(c, [], active));
+    });
+  }
+  // Defer until after page paint so we don't block render
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', loadAll);
+  } else {
+    loadAll();
+  }
+})();
+
+/* ── Peer search/filter ────────────────────────────────────────────── */
+(function () {
+  const input  = document.getElementById('peer-search');
+  const clear  = document.getElementById('peer-search-clear');
+  const empty  = document.getElementById('peer-search-empty');
+  const term   = document.getElementById('peer-search-term');
+  const sub    = document.getElementById('peer-count-sub');
+  const rows   = Array.from(document.querySelectorAll('tr.peer-row'));
+  const total  = rows.length;
+  if (!input) return;
+
+  function apply() {
+    const q = input.value.trim().toLowerCase();
+    clear.style.display = q ? 'inline-flex' : 'none';
+    let shown = 0;
+    rows.forEach(r => {
+      if (!q) { r.style.display = ''; shown++; return; }
+      const hay = (r.dataset.name || '') + ' ' +
+                  (r.dataset.ip   || '') + ' ' +
+                  (r.dataset.device || '');
+      const match = hay.indexOf(q) !== -1;
+      r.style.display = match ? '' : 'none';
+      if (match) shown++;
+    });
+    if (q && shown === 0) {
+      empty.style.display = '';
+      if (term) term.textContent = '"' + input.value.trim() + '"';
+    } else {
+      empty.style.display = 'none';
+    }
+    if (sub) {
+      sub.textContent = q
+        ? `${shown} of ${total} match`
+        : `${total} registered client${total !== 1 ? 's' : ''}`;
+    }
+  }
+
+  input.addEventListener('input', apply);
+  clear.addEventListener('click', () => { input.value = ''; apply(); input.focus(); });
+  // Esc to clear
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { input.value = ''; apply(); }
+  });
+})();
+</script>
 {% endblock %}

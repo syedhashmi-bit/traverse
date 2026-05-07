@@ -50,17 +50,37 @@ def create_app():
     from alerts import start_alerts
     start_alerts()
 
+    # Read version once at startup
+    _version = 'dev'
+    try:
+        _version_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'VERSION')
+        if os.path.exists(_version_path):
+            with open(_version_path) as _f:
+                _version = _f.read().strip() or 'dev'
+    except Exception:
+        pass
+
     @app.context_processor
     def inject_globals():
         from wireguard import get_interface_status
-        from database import count_unseen_alerts
+        from database import count_unseen_alerts, count_peers
         try:
             unseen = count_unseen_alerts()
         except Exception:
             unseen = 0
+        try:
+            peer_total = count_peers()
+        except Exception:
+            peer_total = 0
         return {
             'wg_running':          get_interface_status()['running'],
             'unseen_alert_count':  unseen,
+            'app_version':         _version,
+            'app_peer_total':      peer_total,
+            'app_wg_subnet':       os.getenv('WG_SUBNET', '10.8.0.0/24'),
+            'app_wg_endpoint':     os.getenv('WG_ENDPOINT', ''),
+            'app_pihole_url':      os.getenv('PIHOLE_URL', 'http://10.8.0.1:8080/admin'),
+            'app_pihole_enabled':  bool(os.getenv('PIHOLE_ENABLED')),
         }
 
     @app.errorhandler(404)
