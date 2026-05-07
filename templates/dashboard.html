@@ -138,13 +138,18 @@
 
       <!-- Traffic chart -->
       <div class="noc-panel">
-        <div class="noc-panel-hdr">
-          <span class="noc-panel-title">LIVE TRAFFIC — 15 MIN</span>
-          <span class="noc-panel-sub">↓ <span id="rx-total-display">–</span></span>
-          <span class="noc-sep-sm">/</span>
-          <span class="noc-panel-sub">↑ <span id="tx-total-display">–</span></span>
+        <div class="noc-panel-hdr chart-hdr">
+          <span class="noc-panel-title">LIVE TRAFFIC</span>
+          <span class="noc-sep-sm">│</span>
+          <span class="chart-stat-grp"><span class="chart-lbl">NOW</span>&thinsp;<span class="chart-val" id="ch-rx-now" style="color:#22d3ee;">–</span><span style="color:var(--text-dim);">↓</span>&thinsp;<span class="chart-val" id="ch-tx-now" style="color:#7c6af7;">–</span><span style="color:var(--text-dim);">↑</span></span>
+          <span class="noc-sep-sm">│</span>
+          <span class="chart-stat-grp"><span class="chart-lbl">PEAK</span>&thinsp;<span class="chart-val" id="ch-rx-peak" style="color:#22d3ee; opacity:0.7;">–</span><span style="color:var(--text-dim);">↓</span>&thinsp;<span class="chart-val" id="ch-tx-peak" style="color:#7c6af7; opacity:0.7;">–</span><span style="color:var(--text-dim);">↑</span></span>
+          <span class="noc-sep-sm">│</span>
+          <span class="chart-stat-grp"><span class="chart-lbl">AVG</span>&thinsp;<span class="chart-val" id="ch-rx-avg" style="color:var(--text-muted);">–</span><span style="color:var(--text-dim);">↓</span>&thinsp;<span class="chart-val" id="ch-tx-avg" style="color:var(--text-muted);">–</span><span style="color:var(--text-dim);">↑</span></span>
+          <span style="margin-left:auto; font-family:var(--mono); font-size:10px; color:var(--text-dim); opacity:0.5; letter-spacing:0.05em; flex-shrink:0;">15 MIN</span>
+          <span class="chart-live-dot" id="chart-live-dot">● LIVE</span>
         </div>
-        <div style="height:185px; padding:8px 12px 6px;">
+        <div style="height:192px; padding:6px 12px 4px;">
           <canvas id="traffic-chart"></canvas>
         </div>
       </div>
@@ -339,11 +344,15 @@
 
   const lineCtx = document.getElementById('traffic-chart').getContext('2d');
 
-  function mkGrad(ctx, r, g, b) {
-    const g2 = ctx.createLinearGradient(0,0,0,185);
-    g2.addColorStop(0, `rgba(${r},${g},${b},0.35)`);
-    g2.addColorStop(1, `rgba(${r},${g},${b},0.01)`);
-    return g2;
+  function mkGrad(r, g, b) {
+    return (context) => {
+      const {ctx, chartArea} = context.chart;
+      if (!chartArea) return `rgba(${r},${g},${b},0.1)`;
+      const grad = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+      grad.addColorStop(0, `rgba(${r},${g},${b},0.15)`);
+      grad.addColorStop(1, `rgba(${r},${g},${b},0.01)`);
+      return grad;
+    };
   }
 
   const lineChart = new Chart(lineCtx, {
@@ -352,11 +361,11 @@
       labels: [],
       datasets: [
         { label:'↓ RX', data:[], fill:true,
-          borderColor:'#3b82f6', backgroundColor: mkGrad(lineCtx,59,130,246),
-          borderWidth:1.5, pointRadius:0, tension:0.38 },
+          borderColor:'#22d3ee', backgroundColor: mkGrad(34,211,238),
+          borderWidth:2, pointRadius:0, tension:0.4 },
         { label:'↑ TX', data:[], fill:true,
-          borderColor:'#7c6af7', backgroundColor: mkGrad(lineCtx,124,106,247),
-          borderWidth:1.5, pointRadius:0, tension:0.38 },
+          borderColor:'#7c6af7', backgroundColor: mkGrad(124,106,247),
+          borderWidth:2, pointRadius:0, tension:0.4 },
       ],
     },
     options: {
@@ -364,15 +373,15 @@
       responsive: true, maintainAspectRatio: false,
       interaction: { mode:'index', intersect:false },
       plugins: {
-        legend: { position:'top', labels:{ boxWidth:7, padding:14, usePointStyle:true, pointStyle:'circle' } },
+        legend: { display:false },
         tooltip: {
           backgroundColor:'#141724', borderColor:'#2a2f4a', borderWidth:1, padding:8,
           callbacks: { label: c => '  ' + fmtRate(c.parsed.y) },
         },
       },
       scales: {
-        x: { grid:{ color:'rgba(255,255,255,0.02)' }, ticks:{ maxTicksLimit:5, maxRotation:0 } },
-        y: { grid:{ color:'rgba(255,255,255,0.02)' }, min:0,
+        x: { border:{ display:false }, grid:{ color:'rgba(255,255,255,0.05)' }, ticks:{ maxTicksLimit:16, maxRotation:0 } },
+        y: { border:{ display:false }, grid:{ color:'rgba(255,255,255,0.05)' }, min:0,
              ticks:{ callback: v => fmtRate(v), maxTicksLimit:4 } },
       },
     },
@@ -419,12 +428,6 @@
         sp.rxT = d.total_rx_rate;
         sp.txT = d.total_tx_rate;
 
-        /* totals */
-        const rxTot = document.getElementById('rx-total-display');
-        const txTot = document.getElementById('tx-total-display');
-        if (rxTot) rxTot.textContent = d.total_rx_fmt;
-        if (txTot) txTot.textContent = d.total_tx_fmt;
-
         /* stat bar */
         setLive('lv-active', String(d.active_count));
         setLive('lv-total',  String(d.peer_count));
@@ -444,6 +447,25 @@
         lineChart.data.datasets[0].data = d.history.map(h => h.rx_rate);
         lineChart.data.datasets[1].data = d.history.map(h => h.tx_rate);
         lineChart.update();
+
+        /* chart header stats */
+        if (d.history && d.history.length > 0) {
+          const rxVals = d.history.map(h => h.rx_rate);
+          const txVals = d.history.map(h => h.tx_rate);
+          const rxNow  = rxVals[rxVals.length - 1] || 0;
+          const txNow  = txVals[txVals.length - 1] || 0;
+          const rxPeak = Math.max(...rxVals);
+          const txPeak = Math.max(...txVals);
+          const rxAvg  = rxVals.reduce((a, b) => a + b, 0) / rxVals.length;
+          const txAvg  = txVals.reduce((a, b) => a + b, 0) / txVals.length;
+          const g = id => document.getElementById(id);
+          if (g('ch-rx-now'))  g('ch-rx-now').textContent  = fmtRate(rxNow);
+          if (g('ch-tx-now'))  g('ch-tx-now').textContent  = fmtRate(txNow);
+          if (g('ch-rx-peak')) g('ch-rx-peak').textContent = fmtRate(rxPeak);
+          if (g('ch-tx-peak')) g('ch-tx-peak').textContent = fmtRate(txPeak);
+          if (g('ch-rx-avg'))  g('ch-rx-avg').textContent  = fmtRate(rxAvg);
+          if (g('ch-tx-avg'))  g('ch-tx-avg').textContent  = fmtRate(txAvg);
+        }
 
         /* peer rows */
         d.peers.forEach(p => {
@@ -473,14 +495,17 @@ window._dashPaused = false;
   const btn = document.getElementById('pause-btn');
   if (!btn) return;
   function updateBtn() {
+    const liveDot = document.getElementById('chart-live-dot');
     if (window._dashPaused) {
       btn.textContent  = '⟳ PAUSED';
       btn.style.color  = 'var(--warning)';
       btn.style.borderColor = 'var(--warning)';
+      if (liveDot) { liveDot.textContent = '● PAUSED'; liveDot.style.color = 'var(--warning)'; liveDot.style.animation = 'none'; }
     } else {
       btn.textContent  = '⟳ LIVE';
       btn.style.color  = '';
       btn.style.borderColor = '';
+      if (liveDot) { liveDot.textContent = '● LIVE'; liveDot.style.color = ''; liveDot.style.animation = ''; }
     }
   }
   btn.addEventListener('click', () => {

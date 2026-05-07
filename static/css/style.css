@@ -1225,6 +1225,53 @@ body.noc .content {
   font-family: var(--mono);
 }
 
+/* ── Chart header stats ─────────────────────────────────────────────── */
+
+@keyframes livePulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+.chart-hdr {
+  flex-wrap: nowrap;
+  overflow: hidden;
+  gap: 5px;
+}
+
+.chart-stat-grp {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.chart-lbl {
+  color: var(--text-dim);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.chart-val {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.chart-live-dot {
+  font-size: 10px;
+  font-family: var(--mono);
+  color: var(--success);
+  letter-spacing: 0.05em;
+  animation: livePulse 2s ease-in-out infinite;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 .noc-action-btn {
   padding: 3px 8px;
   background: var(--surface-3);
