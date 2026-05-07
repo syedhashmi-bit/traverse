@@ -123,11 +123,6 @@
     <span class="noc-lbl">CLIENTS</span>
     <span class="noc-val" id="ph-clients">—</span>
   </div>
-  <span class="noc-sep">│</span>
-  <div class="noc-stat">
-    <span class="noc-lbl">PIHOLE</span>
-    <span class="noc-val" id="ph-status" style="color:var(--text-muted);">—</span>
-  </div>
   <div class="noc-bar-right">
     <span style="font-family:var(--mono); font-size:10px; color:var(--text-dim); opacity:0.55; letter-spacing:0.05em;">↗ ADMIN</span>
   </div>
@@ -157,7 +152,7 @@
       <!-- Peers table -->
       <div class="noc-panel noc-panel-flex" style="flex: 1;">
         <div class="noc-panel-hdr">
-          <span class="noc-panel-title">PEERS ({{ total_peers }}/20)</span>
+          <span class="noc-panel-title">PEERS ({{ total_peers }}/{{ max_peers }})</span>
           <a href="{{ url_for('peers.list_peers') }}" class="noc-action-btn">ALL</a>
           <a href="{{ url_for('peers.create') }}" class="noc-action-btn">+ NEW</a>
         </div>
@@ -169,7 +164,7 @@
                 <th style="width:18px;"></th>
                 <th>NAME</th>
                 <th class="hide-mobile">VPN IP</th>
-                <th class="hide-mobile">HS</th>
+                <th class="hide-mobile">LAST SEEN</th>
                 <th>RX / TX</th>
                 <th style="width:22px;"></th>
               </tr>
@@ -182,7 +177,7 @@
                         id="dot-{{ peer.id }}"></span>
                 </td>
                 <td>
-                  {% set _icons = {'phone': '📱', 'laptop': '💻', 'desktop': '🖥', 'tablet': '📋', 'router': '🌐', 'other': '◈'} %}
+                  {% set _icons = {'phone': '📱', 'laptop': '💻', 'desktop': '🖥️', 'tablet': '📟', 'router': '🖧', 'other': ''} %}
                   <span style="font-size:0.85em; margin-right:4px;">{{ _icons.get(peer.device or 'other', '◈') }}</span><a href="{{ url_for('peers.detail', peer_id=peer.id) }}" class="noc-link">{{ peer.name }}</a>
                 </td>
                 <td class="mono dim hide-mobile">{{ peer.vpn_ip }}</td>
@@ -265,6 +260,26 @@
         </div>
       </div>
 
+      <!-- Recent Alerts -->
+      <div class="noc-panel">
+        <div class="noc-panel-hdr">
+          <span class="noc-panel-title">RECENT ALERTS</span>
+          <a href="{{ url_for('alerts.alerts_view') }}" class="noc-action-btn" style="margin-left:auto;">ALL</a>
+        </div>
+        <div style="padding:6px 0;">
+          {% if recent_alerts %}
+            {% for alert in recent_alerts %}
+            <a href="{{ url_for('alerts.alerts_view') }}" class="noc-alert-row noc-alert-{{ alert.severity }}">
+              <span class="noc-alert-dot"></span>
+              <span class="noc-alert-msg">{{ alert.message[:60] }}{% if alert.message|length > 60 %}…{% endif %}</span>
+            </a>
+            {% endfor %}
+          {% else %}
+            <div class="noc-alert-none">✓ No active alerts</div>
+          {% endif %}
+        </div>
+      </div>
+
       {% if pihole_enabled %}
       <!-- Top blocked domains -->
       <div class="noc-panel" id="top-blocked-panel" style="display:none;">
@@ -300,13 +315,14 @@
     return new Date(ts*1000).toLocaleTimeString([],{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
   }
   function relTime(ts) {
-    if (!ts) return 'Never';
+    if (!ts) return 'never';
     const age = Math.floor(Date.now()/1000 - ts);
-    if (age < 0)     return 'now';
-    if (age < 60)    return age + 's';
-    if (age < 3600)  return Math.floor(age/60) + 'm';
-    if (age < 86400) return Math.floor(age/3600) + 'h';
-    return Math.floor(age/86400) + 'd';
+    if (age < 0)     return '● online';
+    if (age < 300)   return '● online';
+    if (age < 3600)  return Math.floor(age/60) + 'm ago';
+    if (age < 86400) return Math.floor(age/3600) + 'h ago';
+    if (age < 604800) return Math.floor(age/86400) + 'd ago';
+    return Math.floor(age/86400) + 'd ago';
   }
   function setLive(id, text) {
     const el = document.getElementById(id);
@@ -504,7 +520,9 @@ window._dashPaused = false;
         if (spd) {
           if (d.last_speedtest) {
             const s = d.last_speedtest;
-            spd.textContent = '↓' + s.download_mbps + '  ↑' + s.upload_mbps + ' Mbps';
+            const dl = parseFloat(s.download_mbps).toFixed(1);
+            const ul = parseFloat(s.upload_mbps).toFixed(1);
+            spd.textContent = '↓ ' + dl + ' Mbps  ↑ ' + ul + ' Mbps';
           } else {
             spd.textContent = 'no data';
           }
@@ -549,8 +567,8 @@ window._dashPaused = false;
 
   window.stUpdate = function(dl, ul, ping, ts) {
     const g = id => document.getElementById(id);
-    if (g('st-dl'))   g('st-dl').textContent   = dl   !== null && dl   !== undefined ? dl   : '--';
-    if (g('st-ul'))   g('st-ul').textContent   = ul   !== null && ul   !== undefined ? ul   : '--';
+    if (g('st-dl'))   g('st-dl').textContent   = dl   !== null && dl   !== undefined ? parseFloat(dl).toFixed(1)   : '--';
+    if (g('st-ul'))   g('st-ul').textContent   = ul   !== null && ul   !== undefined ? parseFloat(ul).toFixed(1)   : '--';
     if (g('st-ping')) g('st-ping').textContent = ping !== null && ping !== undefined ? ping : '--';
     if (g('st-ts'))   g('st-ts').textContent   = ts ? stRelTime(ts) : 'no data';
   };
@@ -645,8 +663,6 @@ window._dashPaused = false;
   function applyUnreachable() {
     const bar = document.getElementById('pihole-bar');
     if (bar) bar.style.opacity = '0.4';
-    const st = document.getElementById('ph-status');
-    if (st) { st.textContent = '● UNREACHABLE'; st.style.color = 'var(--text-dim)'; }
   }
   function refreshPihole() {
     fetch('/api/pihole-stats')
@@ -662,8 +678,7 @@ window._dashPaused = false;
         if (g('ph-domains')) g('ph-domains').textContent = fmtDomains(d.domains_blocked);
         if (g('ph-queries')) g('ph-queries').textContent = fmtCount(d.total_queries);
         if (g('ph-clients')) g('ph-clients').textContent = String(d.unique_clients);
-        const st = g('ph-status');
-        if (st) { st.textContent = '● ACTIVE'; st.style.color = 'var(--success)'; }
+        bar.style.opacity = '';
       })
       .catch(applyUnreachable);
   }

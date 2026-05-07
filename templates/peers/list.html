@@ -46,7 +46,7 @@
           {% endif %}
         </td>
         <td>
-          {% set icons = {'phone': '📱', 'laptop': '💻', 'desktop': '🖥', 'tablet': '📋', 'router': '🌐', 'other': '◈'} %}
+          {% set icons = {'phone': '📱', 'laptop': '💻', 'desktop': '🖥️', 'tablet': '📟', 'router': '🖧', 'other': ''} %}
           <span class="device-badge">{{ icons.get(peer.device or 'other', '◈') }} {{ (peer.device or 'other')|capitalize }}</span>
         </td>
         <td class="td-mono">{{ peer.vpn_ip }}</td>

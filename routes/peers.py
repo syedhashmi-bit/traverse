@@ -39,7 +39,7 @@ def _safe_name(name):
 # ── List ─────────────────────────────────────────────────────────────────────
 
 def _last_seen(hs_raw):
-    """Return (label, css_class) for last-seen display from raw handshake timestamp."""
+    """Return (label, css_class) from raw Unix timestamp string."""
     import time as _time
     try:
         ts = int(hs_raw or 0)
@@ -50,8 +50,8 @@ def _last_seen(hs_raw):
     age = int(_time.time()) - ts
     if age < 0:
         age = 0
-    if age < 180:
-        return ('online now', 'seen-online')
+    if age < 300:  # 5 min — matches is_peer_active threshold
+        return ('● online', 'seen-online')
     if age < 3600:
         return (f'{age // 60}m ago', 'seen-recent')
     if age < 86400:
@@ -68,11 +68,12 @@ def list_peers():
     today = datetime.utcnow().strftime('%Y-%m-%d')
     peers = get_all_peers()
     for p in peers:
-        p['last_handshake'] = format_handshake(p.get('last_handshake'))
+        raw_hs = p.get('last_handshake')  # raw Unix timestamp string — save BEFORE formatting
+        p['last_handshake'] = format_handshake(raw_hs)
         p['rx_fmt']         = format_bytes(p.get('rx_bytes') or 0)
         p['tx_fmt']         = format_bytes(p.get('tx_bytes') or 0)
         p['is_expired']     = bool(p.get('expires_at') and p['expires_at'] <= today)
-        p['last_seen_label'], p['last_seen_cls'] = _last_seen(p.get('last_handshake'))
+        p['last_seen_label'], p['last_seen_cls'] = _last_seen(raw_hs)
     return render_template('peers/list.html', peers=peers)
 
 

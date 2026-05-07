@@ -1175,7 +1175,9 @@ body.noc .content {
 }
 
 .noc-col-right {
+  overflow-x: hidden;
   overflow-y: auto;
+  min-width: 0;
   scrollbar-width: thin;
   scrollbar-color: var(--surface-3) transparent;
 }
@@ -1369,9 +1371,11 @@ body.noc .content {
 /* ── WG show pre ────────────────────────────────────────────────────── */
 
 .noc-pre-wrap {
+  overflow-x: hidden;
   overflow-y: auto;
   flex: 1;
   min-height: 0;
+  max-width: 100%;
   scrollbar-width: thin;
   scrollbar-color: var(--surface-3) transparent;
 }
@@ -1384,6 +1388,8 @@ body.noc .content {
   color: #a5d6a7;
   white-space: pre;
   overflow-x: auto;
+  max-width: 100%;
+  word-break: normal;
   margin: 0;
 }
 
@@ -1635,6 +1641,41 @@ body.theme-light .btn-ghost:hover {
 
 body.theme-light .noc-pihole-bar:hover {
   background: rgba(124,106,247,0.08);
+}
+
+/* ── Dashboard recent alerts ───────────────────────────────────────────── */
+.noc-alert-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  text-decoration: none;
+  color: var(--text-muted);
+  border-left: 2px solid transparent;
+  transition: background 0.15s;
+}
+.noc-alert-row:hover { background: var(--surface-2); }
+.noc-alert-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+  background: var(--text-dim);
+}
+.noc-alert-msg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.noc-alert-info    .noc-alert-dot { background: var(--info); }
+.noc-alert-warning .noc-alert-dot { background: var(--warning); }
+.noc-alert-error   .noc-alert-dot { background: var(--danger); }
+.noc-alert-critical .noc-alert-dot { background: var(--danger); }
+.noc-alert-info    { border-left-color: var(--info); }
+.noc-alert-warning { border-left-color: var(--warning); }
+.noc-alert-error   { border-left-color: var(--danger); }
+.noc-alert-critical { border-left-color: var(--danger); }
+.noc-alert-none {
+  padding: 8px 12px;
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--success);
+  opacity: 0.75;
 }
 
 /* ── About / Changelog ─────────────────────────────────────────────────── */

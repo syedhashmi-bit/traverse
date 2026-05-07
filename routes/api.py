@@ -541,8 +541,8 @@ def _run_speedtest_bg():
         if r.returncode != 0:
             raise RuntimeError(r.stderr.strip() or 'speedtest-cli failed')
         data     = _json.loads(r.stdout)
-        download = round(data['download'] / 1_000_000, 2)
-        upload   = round(data['upload']   / 1_000_000, 2)
+        download = round(data['download'] / 1_000_000, 1)
+        upload   = round(data['upload']   / 1_000_000, 1)
         ping     = round(data['ping'], 1)
         srv      = data.get('server', {})
         srv_name = f"{srv.get('name','')}, {srv.get('country','')}".strip(', ')

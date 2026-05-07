@@ -320,7 +320,7 @@
     <div class="card">
       <div class="card-header">
         <span class="card-title">Notes &amp; Device</span>
-        {% set icons = {'phone': '📱', 'laptop': '💻', 'desktop': '🖥', 'tablet': '📋', 'router': '🌐', 'other': '◈'} %}
+        {% set icons = {'phone': '📱', 'laptop': '💻', 'desktop': '🖥️', 'tablet': '📟', 'router': '🖧', 'other': ''} %}
         <span class="device-badge">{{ icons.get(peer.device or 'other', '◈') }} {{ (peer.device or 'other')|capitalize }}</span>
       </div>
       <div class="card-body">
@@ -337,10 +337,10 @@
               {% for d, label, icon in [
                 ('phone',   'Phone',   '📱'),
                 ('laptop',  'Laptop',  '💻'),
-                ('desktop', 'Desktop', '🖥'),
-                ('tablet',  'Tablet',  '📋'),
-                ('router',  'Router',  '🌐'),
-                ('other',   'Other',   '◈'),
+                ('desktop', 'Desktop', '🖥️'),
+                ('tablet',  'Tablet',  '📟'),
+                ('router',  'Router',  '🖧'),
+                ('other',   'Other',   ''),
               ] %}
               <option value="{{ d }}" {% if (peer.device or 'other') == d %}selected{% endif %}>{{ icon }} {{ label }}</option>
               {% endfor %}

@@ -143,8 +143,8 @@ def parse_wg_show():
     except Exception:
         return {}
 
-def is_peer_active(last_handshake_ts, threshold=180):
-    """True if last handshake was within threshold seconds."""
+def is_peer_active(last_handshake_ts, threshold=300):
+    """True if last handshake was within threshold seconds (default 5 min)."""
     if not last_handshake_ts or last_handshake_ts == '0':
         return False
     try:
