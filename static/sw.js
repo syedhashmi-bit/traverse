@@ -2,7 +2,7 @@
 // cache-then-network for static assets, falls back to /offline when the
 // network is unreachable. API calls (`/api/*`) are never cached.
 
-const CACHE_NAME = 'traverse-v1';
+const CACHE_NAME = 'traverse-v2';
 
 // Real app shell. NOTE: do NOT include '/' here — for unauthenticated visits
 // it 302→/login, and authenticated state is per-session, so precaching it
