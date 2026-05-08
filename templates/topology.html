@@ -118,7 +118,7 @@
     ctx.clearRect(0, 0, W, H);
     if (nodes.length === 0) {
       ctx.fillStyle = C_INACTIVE;
-      ctx.font = '13px var(--mono, monospace)';
+      ctx.font = '500 13px "Inter", "Segoe UI", system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('No peers configured', W / 2, H / 2);
@@ -176,16 +176,19 @@
     ctx.lineWidth   = 3;
     ctx.stroke();
 
-    ctx.font         = 'bold 10px var(--mono, monospace)';
+    // SERVER label — centered inside the server circle
+    ctx.font         = '700 12px "Inter", system-ui, sans-serif';
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle    = C_SERVER;
-    ctx.fillText('SERVER', cx, cy - 1);
+    ctx.fillStyle    = '#f59e0b';
+    ctx.fillText('SERVER', cx, cy);
 
-    ctx.font      = '9px var(--mono, monospace)';
-    ctx.fillStyle = 'rgba(245,158,11,0.6)';
-    const ep = endpoint.length > 20 ? endpoint.slice(0, 18) + '…' : endpoint;
-    ctx.fillText(ep, cx, cy + sR + 14);
+    // Endpoint hostname — 16px below the server circle
+    ctx.font         = '400 10px "JetBrains Mono", "Fira Code", "Courier New", monospace';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle    = '#94a3b8';
+    const ep = endpoint.length > 18 ? endpoint.slice(0, 18) + '…' : endpoint;
+    ctx.fillText(ep, cx, cy + sR + 16);
 
     clickables.push({ x: cx, y: cy, r: sR + 8, type: 'server', url: null });
 
@@ -226,26 +229,32 @@
       ctx.fillText(n.icon, n._x, n._y);
       ctx.globalAlpha  = 1;
 
-      // Peer name below
-      const nameStr = n.name.length > 11 ? n.name.slice(0, 10) + '…' : n.name;
-      ctx.font      = 'bold 10px var(--mono, monospace)';
-      ctx.fillStyle = col;
-      ctx.globalAlpha = n.enabled ? 1 : 0.5;
-      ctx.fillText(nameStr, n._x, n._y + pR + 11);
+      // Peer name — 16px below the bottom of the node circle
+      const nameStr    = n.name.length > 12 ? n.name.slice(0, 12) + '…' : n.name;
+      ctx.font         = '600 13px "Inter", "Segoe UI", system-ui, sans-serif';
+      ctx.fillStyle    = '#e2e8f0';
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'top';
+      ctx.globalAlpha  = n.enabled ? 1 : 0.5;
+      const nameY = n._y + pR + 16;
+      ctx.fillText(nameStr, n._x, nameY);
 
-      // VPN IP
-      ctx.font      = '9px var(--mono, monospace)';
-      ctx.fillStyle = 'rgba(136,146,164,0.8)';
-      ctx.fillText(n.vpn_ip, n._x, n._y + pR + 22);
+      // VPN IP — 14px below the peer name
+      ctx.font      = '400 11px "JetBrains Mono", "Fira Code", "Courier New", monospace';
+      ctx.fillStyle = '#64748b';
+      const ipY = nameY + 13 + 14;
+      ctx.fillText(n.vpn_ip, n._x, ipY);
 
-      // Tunnel mode badge text
+      // Tunnel mode badge — 12px below the VPN IP
       const tmLabels = { full: 'FULL', vpn_only: 'VPN', split: 'SPLIT' };
-      const tmStr    = n.active ? (tmLabels[n.tunnel_mode] || 'FULL') : '';
+      const tmColors = { full: '#3b82f6', vpn_only: '#06b6d4', split: '#f59e0b' };
+      const tmKey    = n.tunnel_mode || 'full';
+      const tmStr    = n.active ? (tmLabels[tmKey] || 'FULL') : '';
       if (tmStr) {
-        ctx.font      = '8px var(--mono, monospace)';
-        ctx.fillStyle = col;
-        ctx.globalAlpha = 0.7;
-        ctx.fillText(tmStr, n._x, n._y + pR + 32);
+        ctx.font      = '700 9px "Inter", system-ui, sans-serif';
+        ctx.fillStyle = tmColors[tmKey] || tmColors.full;
+        const badgeY = ipY + 11 + 12;
+        ctx.fillText(tmStr, n._x, badgeY);
       }
       ctx.globalAlpha = 1;
 
