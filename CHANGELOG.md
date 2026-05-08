@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.4.0] — 2026-05-08 (Progressive Web App)
+
+### Added
+- **Installable PWA** — traverse can now be installed as a standalone app on iOS Safari, Android Chrome, and desktop Chromium browsers
+- **Web App Manifest** at `/manifest.json` — eight icon sizes (72→512), maskable variants for Android adaptive icons, three app shortcuts (All Peers, Add Peer, Alerts)
+- **Service worker** at `/sw.js` — precaches the app shell on install, runtime network-first with cache fallback, falls back to `/offline` page when network is unreachable. API calls (`/api/*`) bypass the cache so live data is always fresh.
+- **Offline page** at `/offline` — standalone dark page with traverse logo, retry button, and auto-reload when the browser fires `online`
+- **iOS PWA support** — apple-touch-icon, apple-touch-startup-image (1242×2688 splash with centered logo), `apple-mobile-web-app-capable`/`-status-bar-style`/`-title` meta tags
+- **Install banner** — slim top bar that surfaces on Android/desktop Chrome via `beforeinstallprompt`; dismissable, remembers dismissal via localStorage, hides automatically once installed
+- **iOS install tip** — static "Add to Home Screen" tooltip for iOS Safari (which doesn't fire `beforeinstallprompt`); separate dismissal key
+- **Push notification handler** in the SW (server-side VAPID wiring is future work; the listener is in place)
+
+### Files Added
+- `static/manifest.json`
+- `static/sw.js`
+- `static/icons/` — `icon-{72,96,128,144,152,192,384,512}.png`, `apple-touch-icon.png`, `splash-1242x2688.png`
+- `templates/offline.html`
+- `routes/pwa.py` — new blueprint with `/manifest.json`, `/sw.js`, `/offline` (all public, no `login_required`)
+
+### Files Modified
+- `app.py` — registered `pwa_bp`
+- `templates/base.html` — PWA meta tags in `<head>`, install banner + iOS tip elements, SW registration script, install prompt controllers
+- `static/css/style.css` — `.install-banner` styles + slide-down animation + mobile breakpoint
+- `VERSION` → 1.4.0
+
+### Implementation notes
+- `sw.js` is served with `Service-Worker-Allowed: /` so the SW can scope to the entire origin even though the file lives under `/static/` on disk
+- `sw.js` is served `no-cache, no-store, must-revalidate` so updates propagate immediately; the SW versions its own asset cache via `CACHE_NAME` (currently `traverse-v1`)
+- `/` is intentionally not in the precache list — it 302s to `/login` for unauthenticated visits, so precaching it would store the redirect or login page
+- The original brief specified `/static/css/main.css` in the SW precache list; the actual CSS file is `style.css`, so the precache list was corrected to point at the real file
+- All 10 generated icons composite correctly on Android adaptive backgrounds — the source `app.png` is RGB and gets `convert('RGBA')` before resize
+
+---
+
 ## [1.3.0] — 2026-05-08 (Notifications)
 
 ### Added

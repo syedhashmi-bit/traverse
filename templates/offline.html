@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0d111b">
+  <title>Offline — traverse</title>
+  <link rel="icon" type="image/png" sizes="96x96"
+        href="{{ url_for('static', filename='icons/icon-96x96.png') }}">
+  <style>
+    :root {
+      --bg:        #0d111b;
+      --surface:   #141724;
+      --border:    #2a2f4a;
+      --text:      #e2e8f0;
+      --muted:     #8892a4;
+      --accent:    #7c6af7;
+      --accent-2:  #5c4fd9;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      -webkit-font-smoothing: antialiased;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 36px 32px;
+      max-width: 420px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+    }
+    .logo {
+      width: 64px; height: 64px;
+      border-radius: 14px;
+      object-fit: cover;
+      margin: 0 auto 18px;
+      display: block;
+      box-shadow: 0 4px 16px rgba(124,106,247,0.25);
+    }
+    h1 {
+      font-size: 1.3rem;
+      font-weight: 700;
+      margin: 0 0 8px;
+      letter-spacing: -0.01em;
+    }
+    p {
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.55;
+      margin: 0 0 24px;
+    }
+    .dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #ef4444;
+      margin-right: 6px;
+      vertical-align: middle;
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%      { opacity: 0.35; }
+    }
+    button {
+      font: inherit;
+      font-weight: 600;
+      font-size: 0.9rem;
+      color: #fff;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      border: none;
+      border-radius: 8px;
+      padding: 11px 22px;
+      cursor: pointer;
+      transition: transform 0.1s ease, box-shadow 0.15s ease;
+    }
+    button:hover  { box-shadow: 0 6px 18px rgba(124,106,247,0.4); }
+    button:active { transform: translateY(1px); }
+    .status {
+      margin-top: 18px;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <img src="{{ url_for('static', filename='img/app.png') }}" alt="traverse" class="logo">
+    <h1>You're offline</h1>
+    <p>
+      <span class="dot"></span>traverse requires a connection to your VPS.
+      Reconnect to your network and try again.
+    </p>
+    <button type="button" onclick="window.location.reload()">Retry</button>
+    <div class="status" id="net-status"></div>
+  </div>
+  <script>
+    var s = document.getElementById('net-status');
+    function update() {
+      s.textContent = navigator.onLine ? 'Network: online — tap Retry' : 'Network: offline';
+    }
+    update();
+    window.addEventListener('online',  update);
+    window.addEventListener('offline', update);
+    window.addEventListener('online', function () { setTimeout(function(){ window.location.reload(); }, 600); });
+  </script>
+</body>
+</html>

@@ -2,13 +2,44 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>{% block title %}Traverse{% endblock %} — VPN Dashboard</title>
+  <meta name="description" content="Personal WireGuard VPN Dashboard">
+
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+  <!-- Favicons -->
   <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
-  <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}">
+  <link rel="icon" type="image/png" sizes="32x32"
+        href="{{ url_for('static', filename='icons/icon-96x96.png') }}">
+
+  <!-- PWA manifest + theme -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0d111b">
+
+  <!-- iOS PWA support -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="traverse">
+  <link rel="apple-touch-icon"
+        href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
+  <link rel="apple-touch-startup-image"
+        href="{{ url_for('static', filename='icons/splash-1242x2688.png') }}">
 </head>
 <body class="{% block body_class %}{% endblock %}">
+
+<!-- ── PWA install banner (Android / desktop Chrome) ─────────────────── -->
+<div id="install-banner" class="install-banner" style="display:none;" role="region" aria-label="Install traverse">
+  <span class="install-banner-text">📱 Install traverse as an app</span>
+  <button type="button" id="install-btn" class="install-btn">Install</button>
+  <button type="button" id="install-dismiss" class="install-dismiss" aria-label="Dismiss">✕</button>
+</div>
+
+<!-- ── iOS install tip (iOS Safari has no beforeinstallprompt) ───────── -->
+<div id="ios-install-tip" class="install-banner ios-tip" style="display:none;" role="region" aria-label="Install on iOS">
+  <span class="install-banner-text">Tap the share button and choose "Add to Home Screen" to install traverse.</span>
+  <button type="button" id="ios-install-dismiss" class="install-dismiss" aria-label="Dismiss">✕</button>
+</div>
 
 <div id="sidebar-overlay" class="sidebar-overlay"></div>
 
@@ -319,5 +350,79 @@
 })();
 </script>
 {% block extra_js %}{% endblock %}
+
+<!-- ── PWA: service worker + install prompt ─────────────────────────── -->
+<script>
+/* Register the service worker */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' })
+      .then(function (reg) { console.log('traverse SW registered:', reg.scope); })
+      .catch(function (err) { console.log('traverse SW failed:', err); });
+  });
+}
+
+/* Android / desktop Chrome — beforeinstallprompt */
+(function () {
+  var banner   = document.getElementById('install-banner');
+  var btn      = document.getElementById('install-btn');
+  var dismiss  = document.getElementById('install-dismiss');
+  if (!banner || !btn || !dismiss) return;
+
+  if (localStorage.getItem('pwa-dismissed') === 'true') return;
+
+  // Already running standalone? Don't prompt again.
+  if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return;
+  if (window.navigator.standalone === true) return;
+
+  var deferredPrompt = null;
+
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    deferredPrompt = e;
+    banner.style.display = 'flex';
+  });
+
+  btn.addEventListener('click', function () {
+    if (!deferredPrompt) { banner.style.display = 'none'; return; }
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then(function () {
+      deferredPrompt = null;
+      banner.style.display = 'none';
+    });
+  });
+
+  dismiss.addEventListener('click', function () {
+    banner.style.display = 'none';
+    localStorage.setItem('pwa-dismissed', 'true');
+  });
+
+  window.addEventListener('appinstalled', function () {
+    banner.style.display = 'none';
+    deferredPrompt = null;
+  });
+})();
+
+/* iOS Safari — show a static "Add to Home Screen" tip */
+(function () {
+  var tip = document.getElementById('ios-install-tip');
+  var dis = document.getElementById('ios-install-dismiss');
+  if (!tip || !dis) return;
+
+  var ua    = navigator.userAgent || '';
+  var isIOS = /iphone|ipad|ipod/i.test(ua);
+  if (!isIOS) return;
+
+  // Already installed (running standalone)? No need to prompt.
+  if (window.navigator.standalone === true) return;
+  if (localStorage.getItem('pwa-ios-dismissed') === 'true') return;
+
+  tip.style.display = 'flex';
+  dis.addEventListener('click', function () {
+    tip.style.display = 'none';
+    localStorage.setItem('pwa-ios-dismissed', 'true');
+  });
+})();
+</script>
 </body>
 </html>

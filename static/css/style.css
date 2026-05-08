@@ -2034,3 +2034,66 @@ body.theme-light .noc-pihole-bar:hover {
   padding: 1px 0 1px 8px;
   color: var(--text-muted);
 }
+
+/* ── PWA install banner ───────────────────────────────────────────── */
+.install-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, var(--surface-2), var(--surface-3));
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  font-size: 0.85rem;
+  color: var(--text);
+  animation: install-slide-down 0.35s ease-out;
+}
+.install-banner-text {
+  flex: 1;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+}
+.install-banner .install-btn {
+  background: linear-gradient(135deg, var(--accent), var(--accent-dim));
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 7px 14px;
+  font: 600 0.82rem 'Inter', system-ui, sans-serif;
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.15s ease;
+}
+.install-banner .install-btn:hover  { box-shadow: 0 4px 14px rgba(124, 106, 247, 0.45); }
+.install-banner .install-btn:active { transform: translateY(1px); }
+.install-banner .install-dismiss {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  padding: 6px 8px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.install-banner .install-dismiss:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+.install-banner.ios-tip {
+  background: linear-gradient(135deg, #1c2035, #252a42);
+}
+@keyframes install-slide-down {
+  from { transform: translateY(-100%); opacity: 0; }
+  to   { transform: translateY(0);     opacity: 1; }
+}
+@media (max-width: 540px) {
+  .install-banner { font-size: 0.78rem; padding: 9px 12px; gap: 8px; }
+  .install-banner .install-btn { padding: 6px 10px; font-size: 0.78rem; }
+}

@@ -1,0 +1,42 @@
+{
+  "name": "traverse",
+  "short_name": "traverse",
+  "description": "Personal WireGuard VPN Dashboard",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0d111b",
+  "theme_color": "#0d111b",
+  "scope": "/",
+  "lang": "en",
+  "icons": [
+    { "src": "/static/icons/icon-72x72.png",   "sizes": "72x72",   "type": "image/png" },
+    { "src": "/static/icons/icon-96x96.png",   "sizes": "96x96",   "type": "image/png" },
+    { "src": "/static/icons/icon-128x128.png", "sizes": "128x128", "type": "image/png" },
+    { "src": "/static/icons/icon-144x144.png", "sizes": "144x144", "type": "image/png" },
+    { "src": "/static/icons/icon-152x152.png", "sizes": "152x152", "type": "image/png" },
+    { "src": "/static/icons/icon-192x192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/static/icons/icon-384x384.png", "sizes": "384x384", "type": "image/png" },
+    { "src": "/static/icons/icon-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "All Peers",
+      "short_name": "Peers",
+      "url": "/peers",
+      "icons": [{ "src": "/static/icons/icon-96x96.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "Add Peer",
+      "short_name": "Add",
+      "url": "/peers/new",
+      "icons": [{ "src": "/static/icons/icon-96x96.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "Alerts",
+      "short_name": "Alerts",
+      "url": "/alerts",
+      "icons": [{ "src": "/static/icons/icon-96x96.png", "sizes": "96x96" }]
+    }
+  ]
+}

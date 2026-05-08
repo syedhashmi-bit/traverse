@@ -36,6 +36,7 @@ def create_app():
     from routes.about         import about_bp
     from routes.port_forwards import pf_bp
     from routes.notifications import notifications_bp
+    from routes.pwa           import pwa_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)
@@ -50,6 +51,7 @@ def create_app():
     app.register_blueprint(about_bp)
     app.register_blueprint(pf_bp,            url_prefix='/port-forwards')
     app.register_blueprint(notifications_bp)
+    app.register_blueprint(pwa_bp)
 
     from alerts import start_alerts
     start_alerts()
