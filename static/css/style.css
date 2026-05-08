@@ -1234,222 +1234,309 @@ tbody td {
 
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 
+/* ═══════════════════════════════════════════════════════════════════════
+   MOBILE LAYOUT — full rewrite for screens ≤ 768px
+   Mobile-first principles applied AFTER the desktop rules above. We do
+   not touch desktop styling; we override only inside this media query.
+   ═══════════════════════════════════════════════════════════════════════ */
 @media (max-width: 768px) {
-  /* ── Global mobile tweaks ──────────────────────────────────────────── */
+
+  /* ── Resets ──────────────────────────────────────────────────────── */
   html, body {
     font-size: 14px;
     -webkit-text-size-adjust: 100%;
-    overflow-x: hidden;
   }
+  body { overflow-x: hidden; }
   * { -webkit-tap-highlight-color: transparent; }
 
-  /* Min touch target 44×44 for buttons & nav links */
-  button, .btn, .nav-link, .bottom-nav-item, .install-btn, .install-dismiss {
-    min-height: 44px;
-  }
+  /* Min touch targets */
+  button, .btn, .nav-link, .install-btn, .install-dismiss { min-height: 44px; }
 
-  /* Sidebar completely hidden; bottom nav takes over */
-  .sidebar          { display: none; }
-  .sidebar-overlay  { display: none; }
-  .hamburger        { display: none; }
-  .main             { margin-left: 0; }
-  .bottom-nav       {
-    display: flex;
-    padding-bottom: env(safe-area-inset-bottom, 0);
-  }
+  /* ── Hide desktop chrome ─────────────────────────────────────────── */
+  .sidebar, .sidebar-overlay, .hamburger { display: none; }
+  .main { margin-left: 0; }
 
-  /* Top bar polish — strip noisy actions on mobile */
+  /* ── Fixed top bar — 48px + iOS safe area ────────────────────────── */
   .topbar {
-    padding-left: 12px;
-    padding-right: 12px;
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: auto;
+    min-height: 48px;
+    padding: env(safe-area-inset-top, 0) 12px 0;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    z-index: 100;
     gap: 8px;
+    align-items: center;
   }
   .topbar .page-title {
     flex: 1;
     font-weight: 700;
     font-size: 1.05rem;
     letter-spacing: -0.01em;
+    line-height: 48px;
     color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
-  .topbar-right {
-    gap: 6px;
-  }
-  /* Hide bell/help/sound/theme on mobile — they live on bottom nav or aren't critical there */
+  .topbar-right { gap: 6px; }
+
+  /* Hide noisy topbar actions: bell/help/sound/theme + Sign Out */
   .topbar-right #sound-toggle,
   .topbar-right #help-toggle,
-  .topbar-right #theme-toggle {
-    display: none;
-  }
-  .topbar-right .btn {
-    padding-left: 12px;
-    padding-right: 12px;
-  }
+  .topbar-right #theme-toggle,
+  .topbar-right a[href*="logout"] { display: none; }
 
-  /* Extra padding so content doesn't hide behind bottom nav (incl safe area) */
-  .content {
-    padding-bottom: calc(68px + env(safe-area-inset-bottom, 0));
+  /* + Add Peer becomes a compact 36×36 round button (icon only) */
+  .topbar-right .topbar-add-peer {
+    padding: 0;
+    width: 36px;
+    height: 36px;
+    min-height: 36px;
+    border-radius: 8px;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
+  .topbar-add-peer-label { display: none; }
 
-  /* NOC dashboard: allow scrolling on mobile */
+  /* Push main content below fixed topbar */
+  .main { padding-top: calc(48px + env(safe-area-inset-top, 0)); }
+
+  /* ── NOC dashboard scroll setup ──────────────────────────────────── */
   body.noc          { overflow: auto; }
-  body.noc .main    { height: auto; overflow: auto; }
-  body.noc .content { overflow: auto; flex: initial;
-                      padding-bottom: calc(68px + env(safe-area-inset-bottom, 0)); }
-  .noc-layout       { overflow: visible; padding: 8px; }
-  .noc-grid         { grid-template-columns: 1fr; height: auto; }
-  .noc-col          { overflow: visible; }
-  .noc-col-right    { overflow: visible; }
-  .noc-panel-flex   { min-height: 180px; }
+  body.noc .main    {
+    height: auto;
+    overflow: auto;
+    padding-top: calc(48px + env(safe-area-inset-top, 0));
+  }
+  body.noc .content { overflow: visible; flex: initial; }
 
-  /* ── NOC top stats bar — compact 2-column grid ─────────────────────── */
+  .content {
+    padding-bottom: calc(56px + env(safe-area-inset-bottom, 0) + 16px);
+  }
+
+  .noc-layout      { overflow: visible; padding: 8px; }
+  .noc-grid        { grid-template-columns: 1fr !important; height: auto; gap: 8px; }
+  .noc-col         { overflow: visible; }
+  .noc-panel-flex  { min-height: 180px; }
+
+  /* ── Hide right column entirely (INTERFACE / WG SHOW / SPEEDTEST) ── */
+  .noc-col-right { display: none !important; }
+
+  /* ── Top stats bar — flat 2-col grid, no rounded card ────────────── */
   .noc-bar {
+    display: flex;
     flex-wrap: wrap;
     padding: 0;
     gap: 0;
-    overflow: visible;
+    margin: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
   }
-  .noc-bar > .noc-stat {
+  .noc-bar > .noc-stat,
+  .noc-health-bar > .noc-stat,
+  .noc-pihole-bar > .noc-stat {
     flex: 1 0 50%;
     min-width: 50%;
     max-width: 50%;
-    padding: 8px 12px;
+    box-sizing: border-box;
+    padding: 10px 14px;
+    display: flex;
     flex-direction: column;
     align-items: flex-start;
     gap: 2px;
     border-bottom: 1px solid var(--border);
     border-right: 1px solid var(--border);
+    background: transparent;
   }
-  .noc-bar > .noc-stat:nth-child(2n) { border-right: none; }
-  .noc-bar > .noc-stat .noc-lbl {
-    font-size: 0.62rem;
+  .noc-bar > .noc-stat:nth-child(2n),
+  .noc-health-bar > .noc-stat:nth-child(2n),
+  .noc-pihole-bar > .noc-stat:nth-child(2n) { border-right: none; }
+  .noc-bar > .noc-stat .noc-lbl,
+  .noc-health-bar > .noc-stat .noc-lbl,
+  .noc-pihole-bar > .noc-stat .noc-lbl {
+    font-size: 10px;
+    font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--text-muted);
   }
-  .noc-bar > .noc-stat .noc-val {
-    font-size: 0.95rem;
-    font-weight: 600;
+  .noc-bar > .noc-stat .noc-val,
+  .noc-health-bar > .noc-stat .noc-val,
+  .noc-pihole-bar > .noc-stat .noc-val {
+    font-size: 16px;
+    font-weight: 700;
     color: var(--text);
+    line-height: 1.2;
+    word-break: break-word;
   }
   .noc-sep { display: none; }
-  .noc-bar-right {
+
+  /* Live speeds row appended at the bottom of the top stats bar */
+  .noc-bar > .noc-bar-right {
     flex: 0 0 100%;
-    padding: 6px 12px;
+    padding: 8px 14px;
     border-top: 1px solid var(--border);
+    background: var(--surface-2);
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 10px;
+    font-size: 12px;
+  }
+
+  /* ── Server health bar — same 2-col grid + VPS SPEED full row ────── */
+  .noc-health-bar {
+    display: flex;
+    flex-wrap: wrap;
+    padding: 0;
+    gap: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .noc-health-bar .noc-bar-right {
+    flex: 0 0 100%;
+    padding: 8px 14px;
+    border-top: 1px solid var(--border);
+    background: var(--surface-2);
     justify-content: flex-start;
     flex-wrap: wrap;
     gap: 8px;
-  }
-
-  /* ── Server health bar — 2-column grid ─────────────────────────────── */
-  .noc-health-bar {
-    flex-wrap: wrap;
-    padding: 0;
-    gap: 0;
-  }
-  .noc-health-bar > .noc-stat {
-    flex: 1 0 50%;
-    min-width: 50%;
-    max-width: 50%;
-    padding: 8px 12px;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
-    border-bottom: 1px solid rgba(42,47,74,0.4);
-    border-right: 1px solid rgba(42,47,74,0.4);
-  }
-  .noc-health-bar > .noc-stat:nth-child(2n) { border-right: none; }
-  .noc-health-bar .noc-bar-right {
-    border-top: 1px solid rgba(42,47,74,0.4);
-    flex: 0 0 100%;
-    padding: 6px 12px;
+    font-size: 12px;
   }
   .noc-health-bar .noc-sep { display: none; }
 
-  /* ── Pi-hole bar — 2-column grid; CLIENTS hidden via .hide-mobile ──── */
+  /* ── Pi-hole bar — 2-col grid; hide ↗ ADMIN tail; CLIENTS hidden ─── */
   .noc-pihole-bar {
+    display: flex;
     flex-wrap: wrap;
     padding: 0;
     gap: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
   }
-  .noc-pihole-bar > .noc-stat {
-    flex: 1 0 50%;
-    min-width: 50%;
-    max-width: 50%;
-    padding: 8px 12px;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
-    border-bottom: 1px solid rgba(42,47,74,0.4);
-    border-right: 1px solid rgba(42,47,74,0.4);
-  }
-  .noc-pihole-bar > .noc-stat:nth-child(2n) { border-right: none; }
-  .noc-pihole-bar .noc-bar-right { flex: 0 0 100%; padding: 6px 12px; }
+  .noc-pihole-bar .noc-bar-right { display: none; }
   .noc-pihole-bar .noc-sep { display: none; }
 
-  /* Live traffic chart — full width, 120px tall on mobile */
-  .chart-canvas-wrap {
-    height: 120px !important;
-    padding: 4px 8px !important;
-  }
-  /* Long header stat groups would push the chart sideways; wrap them. */
-  .noc-panel-hdr.chart-hdr {
-    flex-wrap: wrap;
-    row-gap: 4px;
-  }
-
-  /* Generic hide-on-mobile helper (CLIENTS pi-hole stat, etc.) */
+  /* Generic hide-on-mobile helper (.hide-mobile is set on CLIENTS) */
   .hide-mobile { display: none !important; }
 
-  /* ── NOC table rows — tappable */
-  .noc-table tbody tr { cursor: pointer; }
-  .noc-table tbody tr:active { background: var(--surface-3); }
-
-  /* ── Peers list table — show only Name, Device, Status, Last Seen ─── */
-  .table-wrap { overflow-x: hidden; }
-  .table-wrap table th:nth-child(1),  /* # */
-  .table-wrap table td:nth-child(1),
-  .table-wrap table th:nth-child(4),  /* VPN IP */
-  .table-wrap table td:nth-child(4),
-  .table-wrap table th:nth-child(5),  /* DNS */
-  .table-wrap table td:nth-child(5),
-  .table-wrap table th:nth-child(6),  /* Tunnel */
-  .table-wrap table td:nth-child(6),
-  .table-wrap table th:nth-child(9),  /* Session */
-  .table-wrap table td:nth-child(9),
-  .table-wrap table th:nth-child(10), /* RX/TX */
-  .table-wrap table td:nth-child(10),
-  .table-wrap table th:nth-child(11), /* Traffic sparkline */
-  .table-wrap table td:nth-child(11),
-  .table-wrap table th:nth-child(12), /* Expires */
-  .table-wrap table td:nth-child(12),
-  .table-wrap table th:nth-child(13), /* Created */
-  .table-wrap table td:nth-child(13),
-  .table-wrap table th:nth-child(14), /* Actions */
-  .table-wrap table td:nth-child(14) {
-    display: none;
+  /* ── Live traffic chart — full width, 140px tall ─────────────────── */
+  .chart-canvas-wrap {
+    height: 140px !important;
+    padding: 4px 8px !important;
   }
-  .table-wrap table tbody tr {
-    cursor: pointer;
-    min-height: 48px;
-  }
-  .table-wrap table tbody td {
-    padding: 12px 10px;
-    line-height: 1.3;
-  }
-
-  /* ── Bottom nav polish — bigger icons, safe area ───────────────────── */
-  .bottom-nav-item {
+  .noc-panel-hdr.chart-hdr {
+    flex-wrap: wrap;
+    row-gap: 2px;
+    padding: 6px 10px;
     font-size: 11px;
+  }
+  .noc-panel-hdr.chart-hdr .chart-stat-grp { font-size: 11px; }
+  .noc-panel-hdr.chart-hdr .noc-sep-sm { opacity: 0.4; }
+
+  /* ── NOC peers table — Name + last-seen + chevron only ───────────── */
+  .noc-table tbody tr {
+    cursor: pointer;
+    min-height: 52px;
+  }
+  .noc-table tbody tr:active { background: var(--surface-3); }
+  /* Hide RX/TX column (5th, plus its header) — keep dot, name, view-arrow */
+  .noc-table thead th:nth-child(5),
+  .noc-table tbody td:nth-child(5) { display: none; }
+  .noc-table tbody td { padding: 14px 8px; }
+
+  /* ── /peers list table — show only Name, Device, Status, Last Seen ─ */
+  .table-wrap { overflow-x: hidden; }
+  .table-wrap table th:nth-child(1),  /* #          */
+  .table-wrap table td:nth-child(1),
+  .table-wrap table th:nth-child(4),  /* VPN IP     */
+  .table-wrap table td:nth-child(4),
+  .table-wrap table th:nth-child(5),  /* DNS        */
+  .table-wrap table td:nth-child(5),
+  .table-wrap table th:nth-child(6),  /* Tunnel     */
+  .table-wrap table td:nth-child(6),
+  .table-wrap table th:nth-child(9),  /* Session    */
+  .table-wrap table td:nth-child(9),
+  .table-wrap table th:nth-child(10), /* RX / TX    */
+  .table-wrap table td:nth-child(10),
+  .table-wrap table th:nth-child(11), /* Sparkline  */
+  .table-wrap table td:nth-child(11),
+  .table-wrap table th:nth-child(12), /* Expires    */
+  .table-wrap table td:nth-child(12),
+  .table-wrap table th:nth-child(13), /* Created    */
+  .table-wrap table td:nth-child(13),
+  .table-wrap table th:nth-child(14), /* Actions    */
+  .table-wrap table td:nth-child(14) { display: none; }
+  .table-wrap table tbody tr { cursor: pointer; min-height: 52px; }
+  .table-wrap table tbody td { padding: 14px 10px; line-height: 1.3; }
+
+  /* ── Bottom navigation — 56px + safe area, blur, accent line ─────── */
+  .bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    height: calc(56px + env(safe-area-inset-bottom, 0));
+    padding: 0 0 env(safe-area-inset-bottom, 0) 0;
+    background: rgba(20, 23, 36, 0.92);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-top: 1px solid var(--border);
+    z-index: 200;
+    justify-content: space-around;
+    align-items: stretch;
+  }
+  .bottom-nav-item {
+    flex: 1;
+    min-width: 0;
+    height: 56px;
     padding: 6px 4px;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    opacity: 0.55;
+    border-radius: 0;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    text-decoration: none;
+    min-height: 56px;
   }
   .bottom-nav-item .icon {
     font-size: 24px;
     line-height: 1;
-    margin-bottom: 2px;
+  }
+  .bottom-nav-item.active {
+    color: var(--accent);
+    opacity: 1;
+  }
+  .bottom-nav-item.active::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 22%;
+    right: 22%;
+    height: 2px;
+    background: var(--accent);
+    border-radius: 0 0 2px 2px;
   }
 
-  /* Map: stack map + sidebar panel vertically */
+  /* ── Map / forms / generic grids ─────────────────────────────────── */
   .map-grid {
     grid-template-columns: 1fr !important;
     height: auto !important;
@@ -1459,8 +1546,6 @@ tbody td {
     height: 55vmax;
     min-height: 280px;
   }
-
-  /* Other grids */
   .stats-grid  { grid-template-columns: 1fr 1fr; }
   .form-grid   { grid-template-columns: 1fr; }
   .detail-grid { grid-template-columns: 1fr; }

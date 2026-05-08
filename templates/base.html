@@ -221,7 +221,7 @@
     <button id="hamburger" class="hamburger" aria-label="Open menu">&#9776;</button>
     <span class="page-title">{% block page_title %}Traverse{% endblock %}</span>
     <div class="topbar-right">
-      <a href="{{ url_for('peers.create') }}" class="btn btn-primary btn-sm">+ Add Peer</a>
+      <a href="{{ url_for('peers.create') }}" class="btn btn-primary btn-sm topbar-add-peer">+<span class="topbar-add-peer-label"> Add Peer</span></a>
       <button id="sound-toggle" class="btn btn-ghost btn-sm" title="Sound alerts">🔕</button>
       <button id="help-toggle" class="btn btn-ghost btn-sm" title="Help">?</button>
       <button id="theme-toggle" class="btn btn-ghost btn-sm theme-toggle-btn" title="Toggle theme">☾</button>
