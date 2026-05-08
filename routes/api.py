@@ -209,6 +209,15 @@ def peer_kill(peer_id):
         log_connection_event(peer_id, 'killed', peer['vpn_ip'])
     except Exception:
         pass
+    try:
+        from notifications import send_notification
+        send_notification(
+            'peer_killed',
+            f'⚡ Peer *{peer["name"]}* was killed (force disconnected)',
+            severity='warning',
+        )
+    except Exception:
+        pass
     return jsonify({'ok': True, 'peer_name': peer['name'], 'peer_id': peer_id})
 
 

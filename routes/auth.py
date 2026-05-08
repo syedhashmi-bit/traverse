@@ -31,6 +31,37 @@ def _get_totp():
     return pyotp.TOTP(secret) if secret else None
 
 
+def _client_ip():
+    xff = request.headers.get('X-Forwarded-For', '')
+    if xff:
+        return xff.split(',')[0].strip()
+    return request.remote_addr or 'unknown'
+
+
+def _notify_login_success():
+    try:
+        from notifications import send_notification
+        send_notification(
+            'login_success',
+            f'🔐 Someone logged into traverse dashboard (IP `{_client_ip()}`)',
+            severity='info',
+        )
+    except Exception:
+        pass
+
+
+def _notify_login_failed(who):
+    try:
+        from notifications import send_notification
+        send_notification(
+            'login_failed',
+            f'🚫 Failed login attempt on traverse dashboard (IP `{_client_ip()}`)',
+            severity='warning',
+        )
+    except Exception:
+        pass
+
+
 # ── Decorator ─────────────────────────────────────────────────────────────────
 
 def login_required(f):
@@ -77,11 +108,13 @@ def login():
             if _get_totp() is None:
                 # No TOTP secret configured — skip 2FA
                 session['logged_in'] = True
+                _notify_login_success()
                 return redirect(next_url)
             session['totp_pending'] = True
             session['totp_next'] = next_url
             return redirect(url_for('auth.verify_totp'))
 
+        _notify_login_failed(username)
         error = 'Invalid credentials.'
 
     return render_template(
@@ -110,7 +143,9 @@ def verify_totp():
             next_url = session.pop('totp_next', '/')
             session['totp_pending'] = False
             session['logged_in'] = True
+            _notify_login_success()
             return redirect(_safe_next(next_url))
+        _notify_login_failed('totp')
         error = 'Invalid code. Try again.'
 
     return render_template('totp_verify.html', error=error)

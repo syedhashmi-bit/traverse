@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.3.0] — 2026-05-08 (Notifications)
+
+### Added
+- **Notifications page** at `/notifications` — manage Email (SMTP), Telegram, and Discord channels in one place
+  - Each channel has its own enable toggle, configuration form, "Send Test" button (synchronous, shows ✅/❌ inline), and Save button
+  - Telegram and Discord sections include collapsible setup instructions
+  - Per-event toggles let you choose which of 15 event types fire notifications (peer_connected, peer_disconnected, peer_inactive_long, peer_expired, bw_anomaly, wg_down, wg_recovered, pihole_down, pihole_recovered, peer_added, peer_deleted, peer_killed, config_regenerated, login_success, login_failed)
+  - Recent attempts log shows last 20 sends (timestamp, channel icon, event type, message snippet, ✅/❌ status, expandable error detail); "Clear log" button
+  - Sidebar bell icon with green dot when at least one channel is enabled and minimally configured
+- **Multi-channel notification dispatch** — every wired event fires on all enabled channels simultaneously, in a background thread (never blocks request handlers or the poller)
+- **Wired event hooks**:
+  - `alerts.py` poller: peer connect/disconnect (handshake transition), peer expired, traffic anomaly, peer inactive 7+ days (24 h throttle), WireGuard up/down, Pi-hole up/down (TCP probe to admin URL)
+  - `routes/peers.py`: peer added (form + wizard), peer deleted, config regenerated
+  - `routes/api.py`: peer killed
+  - `routes/auth.py`: login success (post-TOTP), failed login attempt (wrong password or wrong TOTP code) — includes client IP
+
+### Database
+- New table `notification_settings(id, channel UNIQUE, enabled, config JSON, updated_at)` — seeded on first run with email/telegram/discord rows
+- New table `notification_log(id, channel, event_type, message, success, error, sent_at)` — auto-trimmed to 500 most-recent rows
+- New table `notification_event_toggles(event_type PRIMARY KEY, enabled)` — seeded with all 15 events default-on
+
+### Implementation notes
+- `notifications.py` (new module) uses stdlib only — `smtplib`, `urllib.request`, `email.mime`, `json`. No new pip dependencies.
+- All sends wrapped in try/except; failures are logged but never crash the app.
+- `.env` gains `NOTIFY_EMAIL_*`, `NOTIFY_TELEGRAM_*`, `NOTIFY_DISCORD_WEBHOOK` keys (also editable from the UI).
+
+---
+
 ## [1.2.0] — 2026-05-07 (Batch 3 — Split Tunneling, DNS Override, Port Forwarding, Map Colours)
 
 ### Added

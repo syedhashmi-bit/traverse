@@ -1,0 +1,396 @@
+{% extends 'base.html' %}
+{% block title %}Notifications{% endblock %}
+{% block page_title %}Notifications{% endblock %}
+
+{% block content %}
+
+<div class="section-header">
+  <div>
+    <div class="section-title">Notification Channels</div>
+    <div class="section-sub">
+      Send traverse alerts to Email, Telegram, and Discord. All enabled channels fire on every selected event.
+    </div>
+  </div>
+  <div>
+    {% if any_channel_on %}
+    <span class="badge badge-success">● at least one channel active</span>
+    {% else %}
+    <span class="badge badge-warning">○ no channels active</span>
+    {% endif %}
+  </div>
+</div>
+
+<div style="display:flex; flex-direction:column; gap:20px;">
+
+  <!-- ── EMAIL ─────────────────────────────────────────────────────── -->
+  <div class="card" id="section-email">
+    <div class="card-header">
+      <span class="card-title">📧 Email (SMTP)</span>
+      {% if settings.email.enabled %}
+        <span class="badge badge-success">enabled</span>
+      {% else %}
+        <span class="badge badge-muted">disabled</span>
+      {% endif %}
+    </div>
+    <div class="card-body">
+      <form method="POST" action="{{ url_for('notifications.save_channel', channel='email') }}"
+            data-channel="email" class="notif-form">
+        <label class="notif-toggle">
+          <input type="checkbox" name="enabled" {% if settings.email.enabled %}checked{% endif %}>
+          <span>Enable email notifications</span>
+        </label>
+
+        <div class="notif-grid">
+          <label class="form-label">From address
+            <input class="form-input" type="email" name="from"
+                   value="{{ settings.email.config.get('from','') }}"
+                   placeholder="alerts@example.com">
+          </label>
+          <label class="form-label">To address
+            <input class="form-input" type="email" name="to"
+                   value="{{ settings.email.config.get('to','') }}"
+                   placeholder="you@example.com">
+          </label>
+          <label class="form-label">SMTP host
+            <input class="form-input" type="text" name="smtp_host"
+                   value="{{ settings.email.config.get('smtp_host','') }}"
+                   placeholder="smtp.gmail.com">
+          </label>
+          <label class="form-label">SMTP port
+            <input class="form-input" type="number" name="smtp_port"
+                   value="{{ settings.email.config.get('smtp_port','587') }}" min="1" max="65535">
+          </label>
+          <label class="form-label">SMTP username
+            <input class="form-input" type="text" name="smtp_user"
+                   value="{{ settings.email.config.get('smtp_user','') }}"
+                   autocomplete="off">
+          </label>
+          <label class="form-label">SMTP password
+            <input class="form-input" type="password" name="smtp_pass"
+                   value="{{ settings.email.config.get('smtp_pass','') }}"
+                   autocomplete="new-password">
+          </label>
+        </div>
+
+        <div class="notif-actions">
+          <button type="submit" class="btn btn-primary">Save</button>
+          <button type="button" class="btn btn-secondary" data-test="email">Send Test Email</button>
+          <span class="notif-test-result" data-result="email"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── TELEGRAM ──────────────────────────────────────────────────── -->
+  <div class="card" id="section-telegram">
+    <div class="card-header">
+      <span class="card-title">✈ Telegram</span>
+      {% if settings.telegram.enabled %}
+        <span class="badge badge-success">enabled</span>
+      {% else %}
+        <span class="badge badge-muted">disabled</span>
+      {% endif %}
+    </div>
+    <div class="card-body">
+      <details class="notif-help">
+        <summary>How to get a bot token &amp; chat ID</summary>
+        <ol>
+          <li>Open Telegram, search for <code>@BotFather</code>.</li>
+          <li>Send <code>/newbot</code> and follow the prompts.</li>
+          <li>Copy the bot token and paste it below.</li>
+          <li>Start a chat with your new bot, send it any message.</li>
+          <li>
+            Visit
+            <code>https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code>
+            and copy the numeric <code>chat.id</code> from the JSON.
+          </li>
+        </ol>
+      </details>
+
+      <form method="POST" action="{{ url_for('notifications.save_channel', channel='telegram') }}"
+            data-channel="telegram" class="notif-form">
+        <label class="notif-toggle">
+          <input type="checkbox" name="enabled" {% if settings.telegram.enabled %}checked{% endif %}>
+          <span>Enable Telegram notifications</span>
+        </label>
+
+        <div class="notif-grid">
+          <label class="form-label">Bot token
+            <input class="form-input" type="text" name="token"
+                   value="{{ settings.telegram.config.get('token','') }}"
+                   placeholder="123456789:ABC..." autocomplete="off">
+          </label>
+          <label class="form-label">Chat ID
+            <input class="form-input" type="text" name="chat_id"
+                   value="{{ settings.telegram.config.get('chat_id','') }}"
+                   placeholder="123456789" autocomplete="off">
+          </label>
+        </div>
+
+        <div class="notif-actions">
+          <button type="submit" class="btn btn-primary">Save</button>
+          <button type="button" class="btn btn-secondary" data-test="telegram">Send Test Message</button>
+          <span class="notif-test-result" data-result="telegram"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── DISCORD ───────────────────────────────────────────────────── -->
+  <div class="card" id="section-discord">
+    <div class="card-header">
+      <span class="card-title">💬 Discord</span>
+      {% if settings.discord.enabled %}
+        <span class="badge badge-success">enabled</span>
+      {% else %}
+        <span class="badge badge-muted">disabled</span>
+      {% endif %}
+    </div>
+    <div class="card-body">
+      <details class="notif-help">
+        <summary>How to create a webhook URL</summary>
+        <ol>
+          <li>Open Discord, go to your server.</li>
+          <li>Edit a channel → Integrations → Webhooks → New Webhook.</li>
+          <li>Copy the webhook URL and paste it below.</li>
+        </ol>
+      </details>
+
+      <form method="POST" action="{{ url_for('notifications.save_channel', channel='discord') }}"
+            data-channel="discord" class="notif-form">
+        <label class="notif-toggle">
+          <input type="checkbox" name="enabled" {% if settings.discord.enabled %}checked{% endif %}>
+          <span>Enable Discord notifications</span>
+        </label>
+
+        <div class="notif-grid">
+          <label class="form-label" style="grid-column:1 / -1;">Webhook URL
+            <input class="form-input" type="text" name="webhook"
+                   value="{{ settings.discord.config.get('webhook','') }}"
+                   placeholder="https://discord.com/api/webhooks/..." autocomplete="off">
+          </label>
+        </div>
+
+        <div class="notif-actions">
+          <button type="submit" class="btn btn-primary">Save</button>
+          <button type="button" class="btn btn-secondary" data-test="discord">Send Test Message</button>
+          <span class="notif-test-result" data-result="discord"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── PER-EVENT TOGGLES ─────────────────────────────────────────── -->
+  <div class="card" id="section-events">
+    <div class="card-header">
+      <span class="card-title">Which events trigger notifications?</span>
+    </div>
+    <div class="card-body">
+      <form method="POST" action="{{ url_for('notifications.save_events') }}">
+        <div class="notif-events">
+          {% for evt, label in event_labels %}
+          <label class="notif-event">
+            <input type="checkbox" name="events" value="{{ evt }}"
+                   {% if event_toggles.get(evt, True) %}checked{% endif %}>
+            <span>{{ label }}</span>
+          </label>
+          {% endfor %}
+        </div>
+        <div class="notif-actions">
+          <button type="submit" class="btn btn-primary">Save Event Filters</button>
+          <button type="button" class="btn btn-ghost" id="evt-all">Check all</button>
+          <button type="button" class="btn btn-ghost" id="evt-none">Uncheck all</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── LOG ───────────────────────────────────────────────────────── -->
+  <div class="card" id="section-log">
+    <div class="card-header">
+      <span class="card-title">Recent Notification Attempts</span>
+      <form method="POST" action="{{ url_for('notifications.log_clear') }}"
+            onsubmit="return confirm('Clear the notification log?');">
+        <button type="submit" class="btn btn-ghost btn-sm">Clear log</button>
+      </form>
+    </div>
+    <div class="card-body">
+      {% if log_rows %}
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>When (UTC)</th>
+              <th>Channel</th>
+              <th>Event</th>
+              <th>Message</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in log_rows %}
+            {% set ch_icon = {'email':'📧','telegram':'✈','discord':'💬'}.get(r.channel, '·') %}
+            <tr>
+              <td class="mono" style="white-space:nowrap;">{{ r.sent_at[:19] }}</td>
+              <td>{{ ch_icon }} {{ r.channel }}</td>
+              <td><code>{{ r.event_type }}</code></td>
+              <td style="max-width:340px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
+                  title="{{ r.message }}">
+                {{ r.message }}
+              </td>
+              <td>
+                {% if r.success %}
+                  <span style="color:var(--success);">✅ sent</span>
+                {% else %}
+                  <span style="color:var(--danger);" title="{{ r.error }}">❌ failed</span>
+                  {% if r.error %}
+                  <details style="display:inline-block; margin-left:6px;">
+                    <summary style="cursor:pointer; color:var(--text-dim); font-size:0.75rem;">why</summary>
+                    <div class="mono" style="font-size:0.7rem; color:var(--danger); white-space:pre-wrap; max-width:340px;">{{ r.error }}</div>
+                  </details>
+                  {% endif %}
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <div class="empty-state-icon">∅</div>
+        <div class="empty-state-text">No notifications have been sent yet.</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+
+<style>
+.notif-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  margin-bottom: 12px;
+  cursor: pointer;
+}
+.notif-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 18px;
+  margin-bottom: 14px;
+}
+.notif-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.notif-test-result {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.notif-test-result.ok      { color: var(--success); }
+.notif-test-result.fail    { color: var(--danger); }
+.notif-test-result.pending { color: var(--text-dim); }
+.notif-help {
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  background: rgba(124,106,247,0.06);
+  border: 1px solid rgba(124,106,247,0.2);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+}
+.notif-help summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-weight: 500;
+  outline: none;
+}
+.notif-help ol { margin: 8px 0 0 20px; padding: 0; color: var(--text-muted); }
+.notif-help code {
+  background: var(--surface-2);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--text);
+}
+.notif-events {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px 18px;
+  margin-bottom: 14px;
+}
+.notif-event {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 4px 0;
+}
+.badge-muted {
+  background: rgba(255,255,255,0.05);
+  border-color: var(--border);
+  color: var(--text-dim);
+}
+@media (max-width: 700px) {
+  .notif-grid { grid-template-columns: 1fr; }
+}
+</style>
+
+<script>
+(function () {
+  // Test-send buttons — collect current form values and POST as JSON
+  document.querySelectorAll('button[data-test]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const channel = btn.getAttribute('data-test');
+      const form    = btn.closest('form');
+      const result  = form.querySelector('[data-result="' + channel + '"]');
+      if (!form || !result) return;
+
+      const data = {};
+      form.querySelectorAll('input').forEach(inp => {
+        if (inp.type === 'checkbox') return;
+        if (!inp.name) return;
+        data[inp.name] = inp.value;
+      });
+
+      result.className = 'notif-test-result pending';
+      result.textContent = 'sending…';
+      btn.disabled = true;
+
+      fetch('/notifications/test/' + channel, {
+        method:      'POST',
+        credentials: 'same-origin',
+        headers:     { 'Content-Type': 'application/json' },
+        body:        JSON.stringify(data),
+      })
+        .then(r => r.json().catch(() => ({ ok: false, error: 'bad response' })))
+        .then(j => {
+          if (j.ok) {
+            result.className = 'notif-test-result ok';
+            result.textContent = '✅ sent';
+          } else {
+            result.className = 'notif-test-result fail';
+            result.textContent = '❌ ' + (j.error || 'failed');
+          }
+        })
+        .catch(e => {
+          result.className = 'notif-test-result fail';
+          result.textContent = '❌ ' + e;
+        })
+        .finally(() => { btn.disabled = false; });
+    });
+  });
+
+  // Event toggle bulk buttons
+  const all  = document.getElementById('evt-all');
+  const none = document.getElementById('evt-none');
+  if (all)  all.addEventListener('click',  () => document.querySelectorAll('.notif-event input').forEach(i => i.checked = true));
+  if (none) none.addEventListener('click', () => document.querySelectorAll('.notif-event input').forEach(i => i.checked = false));
+})();
+</script>
+
+{% endblock %}

@@ -12,6 +12,9 @@ _last_wg_alert    = 0.0
 _peer_alerted_at  = {}    # public_key -> unix ts of last alert
 _peer_last_active = {}    # public_key -> bool (was active last check)
 _peer_last_ip     = {}    # peer_id -> last endpoint IP seen
+_pihole_was_down  = False  # tracks pi-hole up/down transition
+_inactive_notified = {}    # peer_id -> last unix ts notified about long inactivity
+_expired_notified  = set() # peer_ids already notified as expired
 
 
 def _extract_ip_port(endpoint):
@@ -29,6 +32,24 @@ def _extract_ip_port(endpoint):
     if host and port_part.isdigit():
         return host, int(port_part)
     return endpoint, None
+
+
+def _pihole_alive():
+    """Return True/False if a quick TCP probe to the Pi-hole admin URL succeeds."""
+    import socket
+    from urllib.parse import urlparse
+    raw = os.getenv('PIHOLE_URL', 'http://10.8.0.1:8080/admin')
+    try:
+        u = urlparse(raw if '://' in raw else 'http://' + raw)
+        host = u.hostname or '10.8.0.1'
+        port = u.port or (443 if u.scheme == 'https' else 80)
+    except Exception:
+        host, port = '10.8.0.1', 8080
+    try:
+        with socket.create_connection((host, port), timeout=3):
+            return True
+    except Exception:
+        return False
 
 
 def _send(msg):
@@ -69,6 +90,15 @@ def _check():
             _wg_was_down   = True
             _last_wg_alert = now
             _send('🔴 <b>Traverse VPN</b>\n\nWireGuard (<code>wg0</code>) is <b>DOWN</b>.')
+            try:
+                from notifications import send_notification
+                send_notification(
+                    'wg_down',
+                    f'🚨 WireGuard ({WG_INTERFACE}) is DOWN on traverse server',
+                    severity='critical',
+                )
+            except Exception:
+                pass
         try:
             create_alert('wg_down', f'WireGuard {WG_INTERFACE} is not running', severity='critical')
         except Exception:
@@ -78,12 +108,30 @@ def _check():
             _wg_was_down   = False
             _last_wg_alert = now
             _send('🟢 <b>Traverse VPN</b>\n\nWireGuard is back <b>UP</b>.')
+            try:
+                from notifications import send_notification
+                send_notification(
+                    'wg_recovered',
+                    f'✅ WireGuard ({WG_INTERFACE}) is back UP',
+                    severity='info',
+                )
+            except Exception:
+                pass
 
     # ── Expire peers ───────────────────────────────────────────────────────
     try:
         for p in disable_expired_peers():
             try:
                 remove_peer_from_interface(p['public_key'])
+            except Exception:
+                pass
+            try:
+                from notifications import send_notification
+                send_notification(
+                    'peer_expired',
+                    f'📅 *{p["name"]}* has expired and been disabled',
+                    severity='info',
+                )
             except Exception:
                 pass
     except Exception:
@@ -109,8 +157,26 @@ def _check():
             if was_active is not None:
                 if is_active and not was_active:
                     log_connection_event(peer_id, 'connected', vpn_ip)
+                    try:
+                        from notifications import send_notification
+                        send_notification(
+                            'peer_connected',
+                            f'✅ *{peer["name"]}* connected to traverse',
+                            severity='info',
+                        )
+                    except Exception:
+                        pass
                 elif not is_active and was_active:
                     log_connection_event(peer_id, 'disconnected', vpn_ip)
+                    try:
+                        from notifications import send_notification
+                        send_notification(
+                            'peer_disconnected',
+                            f'🔌 *{peer["name"]}* disconnected from traverse',
+                            severity='warning',
+                        )
+                    except Exception:
+                        pass
             _peer_last_active[pub] = is_active
         trim_connection_events(1000)
     except Exception:
@@ -201,6 +267,15 @@ def _check():
                     return f'{b/1048576:.2f} MB/s'
                 msg = (f'{peer["name"]} unusual bandwidth: '
                        f'{_fmt(current_rate)} vs avg {_fmt(avg_rate)}')
+                try:
+                    from notifications import send_notification
+                    send_notification(
+                        'bw_anomaly',
+                        f'📈 *{peer["name"]}* unusual bandwidth: {_fmt(current_rate)} (avg {_fmt(avg_rate)})',
+                        severity='warning',
+                    )
+                except Exception:
+                    pass
                 # Deduplicate: skip if identical unseen alert in last 10 min
                 try:
                     with __import__('sqlite3').connect(
@@ -246,6 +321,19 @@ def _check():
                     'peer_inactive', f'{peer["name"]} hasn\'t connected in {days_ago} days',
                     peer_id=peer['id'], severity='warning'
                 )
+                # Throttle: re-notify at most once per 24 h per peer
+                last_notif = _inactive_notified.get(peer['id'], 0)
+                if (now - last_notif) >= 86400:
+                    _inactive_notified[peer['id']] = now
+                    try:
+                        from notifications import send_notification
+                        send_notification(
+                            'peer_inactive_long',
+                            f'⚠️ *{peer["name"]}* hasn\'t connected in {days_ago} days',
+                            severity='warning',
+                        )
+                    except Exception:
+                        pass
 
             # Expired
             if peer.get('expires_at') and peer['expires_at'] <= today_str:
@@ -261,6 +349,38 @@ def _check():
                 )
     except Exception:
         pass
+
+    # ── Pi-hole up/down ────────────────────────────────────────────────────
+    if os.getenv('PIHOLE_ENABLED', '').strip().lower() in ('1', 'true', 'yes', 'on'):
+        global _pihole_was_down
+        try:
+            ph_running = _pihole_alive()
+        except Exception:
+            ph_running = None  # unknown — don't flip state
+        if ph_running is False:
+            if not _pihole_was_down:
+                _pihole_was_down = True
+                try:
+                    from notifications import send_notification
+                    send_notification(
+                        'pihole_down',
+                        '⚠️ Pi-hole is unreachable or stopped',
+                        severity='warning',
+                    )
+                except Exception:
+                    pass
+        elif ph_running is True:
+            if _pihole_was_down:
+                _pihole_was_down = False
+                try:
+                    from notifications import send_notification
+                    send_notification(
+                        'pihole_recovered',
+                        '✅ Pi-hole is back online',
+                        severity='info',
+                    )
+                except Exception:
+                    pass
 
     # ── Peer inactivity alerts ─────────────────────────────────────────────
     inactive_hours = float(os.getenv('ALERT_INACTIVE_HOURS', '0'))

@@ -130,6 +130,20 @@
       <span class="nav-label">Logs</span>
     </a>
 
+    <a href="{{ url_for('notifications.index') }}"
+       class="nav-link {% if request.blueprint == 'notifications' %}active{% endif %}">
+      <span class="nav-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M15 17h5l-1.4-1.4A7.94 7.94 0 0 1 18 11V8a6 6 0 0 0-12 0v3a7.94 7.94 0 0 1-.6 4.6L4 17h5"/>
+          <path d="M10 17v1a2 2 0 0 0 4 0v-1"/>
+        </svg>
+      </span>
+      <span class="nav-label">Notifications</span>
+      {% if notifications_active %}
+      <span class="nav-dot" title="At least one channel is active"></span>
+      {% endif %}
+    </a>
+
     <a href="{{ url_for('settings.index') }}"
        class="nav-link {% if request.blueprint == 'settings' %}active{% endif %}">
       <span class="nav-icon">

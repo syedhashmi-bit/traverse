@@ -166,6 +166,12 @@ def create():
     except Exception as e:
         flash(f'Peer saved but could not add to live interface: {e}', 'warning')
 
+    try:
+        from notifications import send_notification
+        send_notification('peer_added', f'➕ New peer added: *{name}*', severity='info')
+    except Exception:
+        pass
+
     flash(f'Peer "{name}" created at {vpn_ip}.', 'success')
     return redirect(url_for('peers.detail', peer_id=peer_id))
 
@@ -295,6 +301,12 @@ def api_create():
         update_peer_dns_override(peer_id, dns_override)
     try:
         add_peer_to_interface(pub, psk, vpn_ip, tunnel_mode, custom_routes)
+    except Exception:
+        pass
+
+    try:
+        from notifications import send_notification
+        send_notification('peer_added', f'➕ New peer added: *{name}*', severity='info')
     except Exception:
         pass
 
@@ -463,6 +475,13 @@ def regenerate(peer_id):
                               peer.get('custom_routes') or '')
     except Exception as e:
         flash(f'Keys updated but WireGuard sync failed: {e}', 'warning')
+    try:
+        from notifications import send_notification
+        send_notification('config_regenerated',
+                          f'🔄 Config regenerated for *{peer["name"]}*',
+                          severity='info')
+    except Exception:
+        pass
     flash('Config regenerated. The old config will no longer work — download or scan the new one below.', 'success')
     return redirect(url_for('peers.detail', peer_id=peer_id))
 
@@ -510,8 +529,14 @@ def delete(peer_id):
     except Exception as e:
         flash(f'Could not remove from live interface: {e}', 'warning')
 
+    peer_name = peer['name']
     delete_peer(peer_id)
-    flash(f'Peer "{peer["name"]}" deleted.', 'success')
+    try:
+        from notifications import send_notification
+        send_notification('peer_deleted', f'🗑️ Peer deleted: *{peer_name}*', severity='info')
+    except Exception:
+        pass
+    flash(f'Peer "{peer_name}" deleted.', 'success')
     return redirect(url_for('peers.list_peers'))
 
 

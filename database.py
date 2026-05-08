@@ -171,6 +171,55 @@ def migrate_db():
             )
         """)
 
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS notification_settings (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel    TEXT    NOT NULL UNIQUE,
+                enabled    INTEGER NOT NULL DEFAULT 0,
+                config     TEXT    NOT NULL DEFAULT '{}',
+                updated_at TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS notification_log (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel    TEXT    NOT NULL,
+                event_type TEXT    NOT NULL,
+                message    TEXT    NOT NULL,
+                success    INTEGER NOT NULL DEFAULT 1,
+                error      TEXT    NOT NULL DEFAULT '',
+                sent_at    TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS notification_event_toggles (
+                event_type TEXT PRIMARY KEY,
+                enabled    INTEGER NOT NULL DEFAULT 1
+            )
+        """)
+
+        # Seed default channel rows + event toggles on first run
+        from datetime import datetime as _dt
+        _now = _dt.utcnow().isoformat()
+        for _ch in ('email', 'telegram', 'discord'):
+            conn.execute(
+                "INSERT OR IGNORE INTO notification_settings (channel, enabled, config, updated_at) "
+                "VALUES (?, 0, '{}', ?)",
+                (_ch, _now),
+            )
+        for _evt in (
+            'peer_connected', 'peer_disconnected', 'peer_inactive_long',
+            'peer_expired', 'bw_anomaly', 'wg_down', 'wg_recovered',
+            'pihole_down', 'pihole_recovered', 'peer_added', 'peer_deleted',
+            'peer_killed', 'config_regenerated', 'login_success', 'login_failed',
+        ):
+            conn.execute(
+                "INSERT OR IGNORE INTO notification_event_toggles (event_type, enabled) VALUES (?, 1)",
+                (_evt,),
+            )
+
 
 def count_peers():
     with get_db() as conn:
@@ -700,3 +749,123 @@ def set_port_forward_enabled(rule_id, enabled):
 def delete_port_forward(rule_id):
     with get_db() as conn:
         conn.execute("DELETE FROM port_forwards WHERE id = ?", (rule_id,))
+
+
+# ── Notification settings ─────────────────────────────────────────────────────
+
+def get_notification_settings():
+    """Return dict {channel: {'enabled': bool, 'config': dict}}."""
+    import json as _json
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT channel, enabled, config FROM notification_settings"
+        ).fetchall()
+    out = {}
+    for r in rows:
+        try:
+            cfg = _json.loads(r['config'] or '{}')
+        except Exception:
+            cfg = {}
+        out[r['channel']] = {'enabled': bool(r['enabled']), 'config': cfg}
+    return out
+
+
+def get_notification_channel(channel):
+    """Return single-channel dict {'enabled': bool, 'config': dict} or None."""
+    import json as _json
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT channel, enabled, config FROM notification_settings WHERE channel = ?",
+            (channel,)
+        ).fetchone()
+    if not row:
+        return None
+    try:
+        cfg = _json.loads(row['config'] or '{}')
+    except Exception:
+        cfg = {}
+    return {'enabled': bool(row['enabled']), 'config': cfg}
+
+
+def update_notification_channel(channel, enabled, config_dict):
+    import json as _json
+    from datetime import datetime
+    now = datetime.utcnow().isoformat()
+    with get_db() as conn:
+        conn.execute("""
+            INSERT INTO notification_settings (channel, enabled, config, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(channel) DO UPDATE SET
+                enabled    = excluded.enabled,
+                config     = excluded.config,
+                updated_at = excluded.updated_at
+        """, (channel, 1 if enabled else 0, _json.dumps(config_dict or {}), now))
+
+
+# ── Notification log ──────────────────────────────────────────────────────────
+
+def log_notification(channel, event_type, message, success, error=''):
+    from datetime import datetime
+    with get_db() as conn:
+        conn.execute("""
+            INSERT INTO notification_log (channel, event_type, message, success, error, sent_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (channel, event_type, message, 1 if success else 0, error or '',
+              datetime.utcnow().isoformat()))
+        # Trim to last 500 rows
+        count = conn.execute("SELECT COUNT(*) FROM notification_log").fetchone()[0]
+        if count > 500:
+            conn.execute("""
+                DELETE FROM notification_log WHERE id IN (
+                    SELECT id FROM notification_log ORDER BY id ASC LIMIT ?
+                )
+            """, (count - 500,))
+
+
+def get_notification_log(limit=20):
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT id, channel, event_type, message, success, error, sent_at
+              FROM notification_log
+             ORDER BY id DESC
+             LIMIT ?
+        """, (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def clear_notification_log():
+    with get_db() as conn:
+        conn.execute("DELETE FROM notification_log")
+
+
+# ── Per-event toggles ────────────────────────────────────────────────────────
+
+def get_notification_event_toggles():
+    """Return dict {event_type: bool}."""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT event_type, enabled FROM notification_event_toggles"
+        ).fetchall()
+    return {r['event_type']: bool(r['enabled']) for r in rows}
+
+
+def set_notification_event_toggles(toggles):
+    """Bulk update — toggles is dict {event_type: bool}."""
+    with get_db() as conn:
+        for evt, on in toggles.items():
+            conn.execute("""
+                INSERT INTO notification_event_toggles (event_type, enabled)
+                VALUES (?, ?)
+                ON CONFLICT(event_type) DO UPDATE SET enabled = excluded.enabled
+            """, (evt, 1 if on else 0))
+
+
+def is_notification_event_enabled(event_type):
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT enabled FROM notification_event_toggles WHERE event_type = ?",
+            (event_type,)
+        ).fetchone()
+    if not row:
+        return True  # default-on for unknown events
+    return bool(row['enabled'])

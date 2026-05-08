@@ -35,6 +35,7 @@ def create_app():
     from routes.logs          import logs_bp
     from routes.about         import about_bp
     from routes.port_forwards import pf_bp
+    from routes.notifications import notifications_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)
@@ -48,6 +49,7 @@ def create_app():
     app.register_blueprint(logs_bp)
     app.register_blueprint(about_bp)
     app.register_blueprint(pf_bp,            url_prefix='/port-forwards')
+    app.register_blueprint(notifications_bp)
 
     from alerts import start_alerts
     start_alerts()
@@ -74,15 +76,21 @@ def create_app():
             peer_total = count_peers()
         except Exception:
             peer_total = 0
+        try:
+            from notifications import is_any_channel_active
+            notif_active = is_any_channel_active()
+        except Exception:
+            notif_active = False
         return {
-            'wg_running':          get_interface_status()['running'],
-            'unseen_alert_count':  unseen,
-            'app_version':         _version,
-            'app_peer_total':      peer_total,
-            'app_wg_subnet':       os.getenv('WG_SUBNET', '10.8.0.0/24'),
-            'app_wg_endpoint':     os.getenv('WG_ENDPOINT', ''),
-            'app_pihole_url':      os.getenv('PIHOLE_URL', 'http://10.8.0.1:8080/admin'),
-            'app_pihole_enabled':  bool(os.getenv('PIHOLE_ENABLED')),
+            'wg_running':              get_interface_status()['running'],
+            'unseen_alert_count':      unseen,
+            'app_version':             _version,
+            'app_peer_total':          peer_total,
+            'app_wg_subnet':           os.getenv('WG_SUBNET', '10.8.0.0/24'),
+            'app_wg_endpoint':         os.getenv('WG_ENDPOINT', ''),
+            'app_pihole_url':          os.getenv('PIHOLE_URL', 'http://10.8.0.1:8080/admin'),
+            'app_pihole_enabled':      bool(os.getenv('PIHOLE_ENABLED')),
+            'notifications_active':    notif_active,
         }
 
     @app.errorhandler(404)
