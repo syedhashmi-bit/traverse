@@ -11,6 +11,7 @@ from flask import Blueprint, jsonify, request
 from database import get_all_peers, upsert_traffic_sample, get_peer_daily_traffic
 from wireguard import parse_wg_show, format_bytes, is_peer_active, format_handshake, get_interface_status, WG_INTERFACE
 from routes.auth import login_required
+from cache_ext import cache
 
 api_bp = Blueprint('api', __name__)
 
@@ -367,6 +368,7 @@ def _fetch_pihole_summary():
 
 @api_bp.route('/api/pihole/top-blocked')
 @login_required
+@cache.cached(timeout=55, key_prefix='pihole_top_blocked')
 def pihole_top_blocked():
     """Return top 10 blocked domains from Pi-hole v6 API."""
     import os
@@ -568,6 +570,7 @@ def _pihole_status():
 
 @api_bp.route('/api/server/health')
 @login_required
+@cache.cached(timeout=15, key_prefix='server_health')
 def server_health():
     from database import get_last_speedtest
     from wireguard import WG_ENDPOINT

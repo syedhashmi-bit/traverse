@@ -2375,3 +2375,281 @@ body.theme-light .noc-pihole-bar:hover {
     padding-bottom: calc(64px + env(safe-area-inset-bottom, 0));
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   POLISH PASS — appended last so it wins by source order. Touches:
+   skeletons, scrollbars, stat-bar tightening, online pulse, alt rows,
+   action-button reveal, focus rings, toggle switches, status banner,
+   touch feedback, mobile glow + chevron, topology grid + ring, vignette.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── Skeleton shimmer (utility) ───────────────────────────────────────── */
+.skeleton {
+  background: linear-gradient(90deg, #1e2433 25%, #252d3d 50%, #1e2433 75%);
+  background-size: 200% 100%;
+  animation: tv-shimmer 1.5s infinite;
+  border-radius: 4px;
+  display: inline-block;
+  min-height: 1em;
+  min-width: 40px;
+  color: transparent !important;
+  opacity: 0.85;
+}
+@keyframes tv-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ── Scrollbars (consistent) ──────────────────────────────────────────── */
+::-webkit-scrollbar          { width: 6px; height: 6px; }
+::-webkit-scrollbar-track    { background: transparent; }
+::-webkit-scrollbar-thumb    { background: rgba(255,255,255,0.12); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
+.noc-col-right::-webkit-scrollbar { width: 5px; }
+
+/* ── Tighten stat-bars + accent separators ───────────────────────────── */
+.noc-bar         { padding: 6px 14px; }
+.noc-health-bar  { padding: 4px 14px; border-bottom: 1px solid rgba(124,106,247,0.12); }
+.noc-pihole-bar  { padding: 4px 14px; border-bottom: 1px solid rgba(124,106,247,0.12); }
+
+/* ── Number flash (chart NOW/PEAK/AVG accent → normal) ───────────────── */
+.num-flash { animation: tv-flash 0.32s ease-out; }
+@keyframes tv-flash {
+  0%   { color: var(--accent); text-shadow: 0 0 8px rgba(124,106,247,0.55); }
+  100% { color: inherit; text-shadow: none; }
+}
+
+/* ── Online dot pulse (peers table) ──────────────────────────────────── */
+@keyframes tv-pulse-dot {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55); }
+  50%      { box-shadow: 0 0 0 4px rgba(16, 185, 129, 0); }
+}
+.noc-dot-green { animation: tv-pulse-dot 2.2s ease-in-out infinite; }
+
+/* ── Peer table polish: alt rows + action reveal ─────────────────────── */
+.noc-table tbody tr:nth-child(odd) td { background: rgba(255,255,255,0.018); }
+.noc-table tbody tr:hover td          { background: rgba(124,106,247,0.06); }
+.noc-view-btn {
+  opacity: 0.45;
+  transition: opacity 0.18s ease, transform 0.05s ease;
+}
+.noc-table tbody tr:hover .noc-view-btn,
+.noc-table tbody tr:focus-within .noc-view-btn,
+.noc-table tbody tr:active .noc-view-btn { opacity: 1; }
+
+/* ── Right-panel sections: subtle accent border ──────────────────────── */
+.noc-col-right .noc-panel { border-left: 2px solid rgba(124,106,247,0.18); }
+
+/* ── Form focus rings (consistent) ───────────────────────────────────── */
+input[type="text"]:focus,
+input[type="search"]:focus,
+input[type="email"]:focus,
+input[type="number"]:focus,
+input[type="password"]:focus,
+input[type="date"]:focus,
+input[type="url"]:focus,
+input[type="tel"]:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px rgba(124, 106, 247, 0.16);
+}
+
+/* ── Touch / press feedback (everywhere) ─────────────────────────────── */
+button:active,
+.btn:active,
+.bottom-nav-item:active,
+.noc-action-btn:active,
+.noc-qbtn:active,
+.noc-view-btn:active,
+.toggle-switch:active {
+  transform: scale(0.97);
+  transition: transform 0.05s ease;
+}
+
+/* ── Toggle switches (drop-in for checkboxes) ────────────────────────── */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+.toggle-switch .slider {
+  position: absolute;
+  inset: 0;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+.toggle-switch .slider::before {
+  content: '';
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  left: 2px;
+  top: 2px;
+  background: #e2e8f0;
+  border-radius: 50%;
+  transition: transform 0.2s ease, background 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+.toggle-switch input:checked + .slider {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.toggle-switch input:checked + .slider::before {
+  transform: translateX(20px);
+  background: #fff;
+}
+.toggle-switch input:focus-visible + .slider {
+  box-shadow: 0 0 0 3px rgba(124, 106, 247, 0.22);
+}
+
+/* ── Loading spinner (inline) ────────────────────────────────────────── */
+.btn-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: tv-spin 0.6s linear infinite;
+  vertical-align: -2px;
+  margin-right: 6px;
+}
+@keyframes tv-spin { to { transform: rotate(360deg); } }
+.btn[disabled], button[disabled] {
+  opacity: 0.7;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* ── Status banner (peer detail) ─────────────────────────────────────── */
+.peer-status-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  margin: 0 0 12px;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  border-left: 3px solid;
+}
+.peer-status-banner .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+}
+.peer-status-banner.online {
+  background: rgba(16, 185, 129, 0.08);
+  color: var(--success);
+  border-left-color: var(--success);
+}
+.peer-status-banner.offline {
+  background: rgba(90, 98, 120, 0.08);
+  color: var(--text-muted);
+  border-left-color: var(--text-dim);
+}
+.peer-status-banner.disabled {
+  background: rgba(239, 68, 68, 0.08);
+  color: var(--danger);
+  border-left-color: var(--danger);
+}
+
+/* ── Topology canvas grid dots + slow rotating ring ──────────────────── */
+.topology-grid-bg {
+  background-image: radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+@keyframes tv-slow-spin { to { transform: rotate(360deg); } }
+.topology-server-ring {
+  position: absolute;
+  width: 96px; height: 96px;
+  margin: -48px 0 0 -48px;
+  left: 50%; top: 50%;
+  border: 1.5px dashed rgba(124, 106, 247, 0.4);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: tv-slow-spin 14s linear infinite;
+}
+@keyframes tv-pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+  50%      { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+}
+.topology-peer-active { animation: tv-pulse-glow 2.4s ease-in-out infinite; }
+
+/* ── Pi-hole grid colour state ───────────────────────────────────────── */
+.ph-blocked-warn { color: var(--warning) !important; }
+.ph-blocked-zero { color: var(--success) !important; }
+
+/* ── Mobile polish ───────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Bottom nav active tab — top accent line */
+  .bottom-nav-item { transition: color 0.1s, transform 0.05s; }
+  .bottom-nav-item.active::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 28%; right: 28%;
+    height: 2px;
+    background: var(--accent);
+    border-radius: 0 0 2px 2px;
+  }
+
+  /* Stats grid — value glow on success states */
+  .mobile-glow-good { text-shadow: 0 0 12px rgba(16, 185, 129, 0.45); }
+
+  /* Page transitions slightly snappier */
+  .content,
+  body.noc .content { animation: tv-fade-in 0.1s ease-out; }
+  @keyframes tv-fade-in {
+    from { opacity: 0; transform: translateY(2px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Bump tiny font sizes to ≥11px */
+  [style*="font-size:9px"]  { font-size: 11px !important; }
+  [style*="font-size: 9px"] { font-size: 11px !important; }
+  [style*="font-size:10px"] { font-size: 11px !important; }
+  [style*="font-size: 10px"]{ font-size: 11px !important; }
+}
+
+/* ── Border-radius consistency ───────────────────────────────────────── */
+.btn, .noc-action-btn, .noc-qbtn, .noc-view-btn { border-radius: 6px; }
+.noc-badge, .live-badge { border-radius: 999px; }
+
+/* ── Empty search state ──────────────────────────────────────────────── */
+.empty-search {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+.empty-search-icon { font-size: 2rem; opacity: 0.4; margin-bottom: 8px; display: block; }
+
+/* ── Map vignette overlay (applied via .map-vignette wrapper) ────────── */
+.map-vignette {
+  position: relative;
+}
+.map-vignette::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: inset 0 0 80px 12px rgba(13, 15, 26, 0.55);
+  z-index: 450; /* leaflet panes top out below this */
+}

@@ -3,3 +3,4 @@ python-dotenv>=1.2.0
 qrcode[pil]>=8.0
 pillow>=12.0.0
 pyotp>=2.9.0
+flask-caching>=2.4.0

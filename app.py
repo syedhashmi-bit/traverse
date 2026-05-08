@@ -9,6 +9,9 @@ def create_app():
     app = Flask(__name__)
     app.secret_key = os.getenv('SECRET_KEY', 'changeme-set-in-dotenv')
 
+    from cache_ext import cache
+    cache.init_app(app)
+
     from database import init_db, disable_expired_peers
     init_db()
 

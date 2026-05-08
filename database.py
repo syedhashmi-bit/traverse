@@ -200,6 +200,28 @@ def migrate_db():
             )
         """)
 
+        # ── Indexes (idempotent) ──────────────────────────────────────────
+        for _idx_sql in (
+            "CREATE INDEX IF NOT EXISTS idx_peers_enabled ON peers(enabled)",
+            "CREATE INDEX IF NOT EXISTS idx_peers_expires_at ON peers(expires_at)",
+            "CREATE INDEX IF NOT EXISTS idx_connection_events_peer_id ON connection_events(peer_id)",
+            "CREATE INDEX IF NOT EXISTS idx_connection_events_timestamp ON connection_events(timestamp)",
+            "CREATE INDEX IF NOT EXISTS idx_peer_bandwidth_snapshots_peer_id ON peer_bandwidth_snapshots(peer_id)",
+            "CREATE INDEX IF NOT EXISTS idx_peer_bandwidth_snapshots_recorded_at ON peer_bandwidth_snapshots(recorded_at)",
+            "CREATE INDEX IF NOT EXISTS idx_peer_bandwidth_snapshots_peer_recorded ON peer_bandwidth_snapshots(peer_id, recorded_at)",
+            "CREATE INDEX IF NOT EXISTS idx_alerts_seen ON alerts(seen)",
+            "CREATE INDEX IF NOT EXISTS idx_alerts_created_at ON alerts(created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_notification_log_sent_at ON notification_log(sent_at)",
+            "CREATE INDEX IF NOT EXISTS idx_peer_locations_peer_id ON peer_locations(peer_id)",
+            "CREATE INDEX IF NOT EXISTS idx_peer_locations_last_seen ON peer_locations(last_seen_at)",
+            "CREATE INDEX IF NOT EXISTS idx_speedtest_tested_at ON speedtest_results(tested_at)",
+            "CREATE INDEX IF NOT EXISTS idx_traffic_samples_peer_day ON traffic_samples(peer_id, day)",
+        ):
+            try:
+                conn.execute(_idx_sql)
+            except Exception:
+                pass
+
         # Seed default channel rows + event toggles on first run
         from datetime import datetime as _dt
         _now = _dt.utcnow().isoformat()

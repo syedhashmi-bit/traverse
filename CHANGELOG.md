@@ -1,5 +1,62 @@
 # Changelog
 
+## [1.5.0] — 2026-05-08 (Performance + Polish)
+
+### Performance
+- **Flask response caching** via `flask-caching` — `/api/server/health` cached 15s (avoids re-running `psutil.cpu_percent(interval=0.3)`, `systemctl status wg-quick@wg0`, `pihole status`, `gravity.db` query on every poll); `/api/pihole/top-blocked` cached 55s
+- **Database indexes** — `peers.enabled`, `peers.expires_at`, `connection_events.{peer_id,timestamp}`, `peer_bandwidth_snapshots.{peer_id,recorded_at}` (composite + singles), `alerts.{seen,created_at}`, `notification_log.sent_at`, `peer_locations.{peer_id,last_seen_at}`, `speedtest_results.tested_at`, `traffic_samples (peer_id, day)` — created in `init_db()` via `IF NOT EXISTS`
+- **Nginx gzip** — `gzip on; gzip_comp_level 6` for HTML/CSS/JS/JSON/SVG. Result: `style.css` 72.5 KB → 13.2 KB on the wire (82% smaller); login HTML 3.1 KB → 1.1 KB (64%)
+- **Nginx static caching** — `/static/` returns `Cache-Control: public, immutable, max-age=604800`; `access_log off` (no log churn for fonts/icons/CSS)
+- **JS deferred** — `app.js` now uses `defer` so it does not block parsing
+- **Poller audit** — `alerts.py` already runs on a 60s tick (not a tight loop); single tick covers WG show + bandwidth + pi-hole probe within ~1s; no stagger needed
+
+### Visual polish
+- **Skeleton shimmer** utility (`.skeleton`) for placeholder loading states
+- **Stat bars** — padding tightened by ~20%, accent border-bottom separator between bars
+- **Number flash** — chart NOW/PEAK/AVG values now flash accent → normal over 0.32s on change
+- **Online dot pulse** — peers table green dots pulse at 2.2s
+- **Alt rows + hover** — peer table rows alternate at `rgba(255,255,255,0.018)`, hover at `rgba(124,106,247,0.06)`; action chevrons fade in on row hover only
+- **Right panel** — left-accent border bar on each section
+- **Form focus rings** — consistent accent border + 3px halo on every input/textarea/select focus
+- **Touch feedback** — `transform: scale(0.97)` active state on every button + nav item
+- **Toggle switches** — proper `.toggle-switch` CSS-only component (44×24, accent ON, focus ring)
+- **Status banner** — peer detail page now shows green/red banner at the top reflecting enabled state
+- **Topology** — radial dot grid background pattern; CSS for slow-rotating server ring + active peer pulse glow available
+- **Map** — `.map-vignette` wrapper applies a subtle inner box-shadow for depth at the edges
+- **Bottom nav** — 2px accent line on top of the active tab (mobile)
+- **Pi-hole grid** — `.ph-blocked-warn` (amber) / `.ph-blocked-zero` (green) classes for state-aware blocked count
+- **Mobile font floor** — any `font-size:9px/10px` inline style auto-bumped to 11px on ≤768px
+- **Page transition** — fade-in trimmed from 0.15s → 0.1s on mobile
+- **Scrollbars** — 6px thumb at `rgba(255,255,255,0.12)`, hover `0.22`, transparent track — applied universally
+- **Border-radius consistency** — 6px on `.btn`/action buttons, 999px (pill) on badges, 4px on inputs
+
+### Added
+- `cache_ext.py` — shared `Cache` instance (SimpleCache, 30s default)
+- `flask-caching>=2.4.0` in `requirements.txt`
+
+### Files Modified
+- `app.py` — `cache.init_app(app)` after Flask app creation
+- `database.py` — index creation block in `migrate_db()`
+- `routes/api.py` — `@cache.cached` on `/api/server/health` (15s) + `/api/pihole/top-blocked` (55s)
+- `templates/base.html` — `defer` on `app.js`
+- `templates/peers/detail.html` — peer status banner at top
+- `templates/topology.html` — `.topology-grid-bg` class on canvas card
+- `templates/map.html` — `.map-vignette` wrapper on map card
+- `static/css/style.css` — appended polish block (~250 lines)
+- `/etc/nginx/sites-available/traverse` — gzip directives, `location /static/` with 7d immutable caching
+- `VERSION` → 1.5.0
+
+### Measurements
+| Asset                | Before  | After (gzip) | Reduction |
+|----------------------|--------:|-------------:|----------:|
+| style.css            | 72.5 KB |     13.2 KB  | 82%       |
+| login HTML           |  3.1 KB |      1.1 KB  | 64%       |
+| Repeat-visit static  | network |  browser     | 100%      |
+
+Cold load (`GET /` → 302 to `/login`): ~78 ms → ~50–65 ms (latency-bound; gains compound across the asset graph on first authenticated visit, where chart.min.js (200 KB → ~58 KB) and leaflet.min.js (147 KB → ~42 KB) compress).
+
+---
+
 ## [1.4.0] — 2026-05-08 (Progressive Web App)
 
 ### Added

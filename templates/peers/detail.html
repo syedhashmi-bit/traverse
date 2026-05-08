@@ -3,6 +3,12 @@
 {% block page_title %}Peer: {{ peer.name }}{% endblock %}
 
 {% block content %}
+{% set _hs_ts = peer.last_handshake_raw|int if peer.last_handshake_raw is defined else 0 %}
+{% if not peer.enabled %}
+<div class="peer-status-banner disabled"><span class="dot"></span>Peer Disabled</div>
+{% else %}
+<div class="peer-status-banner online" id="peer-status-banner"><span class="dot"></span>Online</div>
+{% endif %}
 <div class="section-header mb-16">
   <div>
     <div class="section-title">{{ peer.name }}</div>
