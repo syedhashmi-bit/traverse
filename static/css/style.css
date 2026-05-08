@@ -2312,3 +2312,66 @@ body.theme-light .noc-pihole-bar:hover {
   .install-banner { font-size: 0.78rem; padding: 9px 12px; gap: 8px; }
   .install-banner .install-btn { padding: 6px 10px; font-size: 0.78rem; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MOBILE SCROLL RESTORATION (must come LAST)
+   The desktop `body.noc { height: 100vh; overflow: hidden }` rules above
+   appear AFTER the main mobile media block, so source order makes them
+   win on mobile too — that pinned the dashboard at viewport height with
+   no overflow, killing scroll. This block re-asserts the mobile scroll
+   model after those rules so it wins by source order.
+
+   Scroll model: BODY is the only scroll container. `.main` and `.content`
+   are overflow:visible. Two nested scrollers (body + .main) caused iOS
+   Safari to freeze momentum scrolling.
+   ═══════════════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  html {
+    height: 100%;
+    overflow-x: hidden;
+  }
+  body {
+    min-height: 100%;
+    height: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: auto;
+  }
+
+  /* All NOC-page wrappers must NOT clip vertical scroll */
+  body.noc {
+    height: auto;
+    min-height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  body.noc .main,
+  .main {
+    height: auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: visible;
+    position: static;
+  }
+  body.noc .content,
+  .content,
+  .page-content {
+    height: auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: visible;
+    flex: initial;
+  }
+
+  /* Padding so content clears the fixed top bar and bottom nav */
+  body.noc .main,
+  .main {
+    padding-top: calc(48px + env(safe-area-inset-top, 0));
+  }
+  .content,
+  body.noc .content {
+    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0));
+  }
+}
