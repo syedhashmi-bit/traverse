@@ -75,6 +75,7 @@ def list_peers():
     last_connects = get_peers_last_connect_ts()
     for p in peers:
         raw_hs = p.get('last_handshake')  # raw Unix timestamp string — save BEFORE formatting
+        p['last_handshake_raw'] = raw_hs or ''
         p['last_handshake'] = format_handshake(raw_hs)
         p['rx_fmt']         = format_bytes(p.get('rx_bytes') or 0)
         p['tx_fmt']         = format_bytes(p.get('tx_bytes') or 0)
@@ -538,6 +539,145 @@ def delete(peer_id):
         pass
     flash(f'Peer "{peer_name}" deleted.', 'success')
     return redirect(url_for('peers.list_peers'))
+
+
+# ── Bulk actions ──────────────────────────────────────────────────────────────
+
+def _parse_bulk_ids():
+    """Parse a comma-separated 'ids' field or repeated 'ids' values."""
+    raw = request.form.getlist('ids')
+    if not raw:
+        single = request.form.get('ids', '')
+        raw = [single] if single else []
+    out = []
+    for chunk in raw:
+        for token in (chunk or '').split(','):
+            token = token.strip()
+            if token.isdigit():
+                out.append(int(token))
+    # Dedupe preserving order
+    seen = set()
+    return [i for i in out if not (i in seen or seen.add(i))]
+
+
+@peers_bp.route('/bulk-disable', methods=['POST'])
+@login_required
+def bulk_disable():
+    ids = _parse_bulk_ids()
+    if not ids:
+        return jsonify({'ok': False, 'error': 'No peer ids provided.'}), 400
+    n = 0
+    for pid in ids:
+        peer = get_peer_by_id(pid)
+        if not peer or not peer.get('enabled'):
+            continue
+        set_peer_enabled(pid, False)
+        try:
+            remove_peer_from_interface(peer['public_key'])
+        except Exception:
+            pass
+        n += 1
+    return jsonify({'ok': True, 'count': n})
+
+
+@peers_bp.route('/bulk-enable', methods=['POST'])
+@login_required
+def bulk_enable():
+    ids = _parse_bulk_ids()
+    if not ids:
+        return jsonify({'ok': False, 'error': 'No peer ids provided.'}), 400
+    n = 0
+    for pid in ids:
+        peer = get_peer_by_id(pid)
+        if not peer or peer.get('enabled'):
+            continue
+        set_peer_enabled(pid, True)
+        try:
+            add_peer_to_interface(
+                peer['public_key'], peer['preshared_key'], peer['vpn_ip'],
+                peer.get('tunnel_mode') or 'full',
+                peer.get('custom_routes') or '',
+            )
+        except Exception:
+            pass
+        n += 1
+    return jsonify({'ok': True, 'count': n})
+
+
+@peers_bp.route('/bulk-delete', methods=['POST'])
+@login_required
+def bulk_delete():
+    ids = _parse_bulk_ids()
+    if not ids:
+        return jsonify({'ok': False, 'error': 'No peer ids provided.'}), 400
+    n = 0
+    for pid in ids:
+        peer = get_peer_by_id(pid)
+        if not peer:
+            continue
+        try:
+            remove_peer_from_interface(peer['public_key'])
+        except Exception:
+            pass
+        delete_peer(pid)
+        try:
+            from notifications import send_notification
+            send_notification('peer_deleted', f'🗑️ Peer deleted: *{peer["name"]}*', severity='info')
+        except Exception:
+            pass
+        n += 1
+    return jsonify({'ok': True, 'count': n})
+
+
+# ── CSV export ────────────────────────────────────────────────────────────────
+
+@peers_bp.route('/export.csv')
+@login_required
+def export_csv():
+    """Export peers as CSV — never includes private_key or preshared_key."""
+    import csv
+    from datetime import datetime
+    peers = get_all_peers()
+    today = datetime.utcnow().strftime('%Y-%m-%d')
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow([
+        'id', 'name', 'device', 'vpn_ip', 'public_key', 'dns', 'dns_override',
+        'tunnel_mode', 'custom_routes', 'enabled', 'is_active',
+        'rx_bytes', 'tx_bytes', 'last_handshake', 'expires_at',
+        'created_at', 'updated_at', 'notes',
+    ])
+    for p in peers:
+        raw_hs = p.get('last_handshake')
+        active = bool(p.get('enabled')) and is_peer_active(raw_hs)
+        w.writerow([
+            p.get('id'),
+            p.get('name'),
+            p.get('device') or 'other',
+            p.get('vpn_ip'),
+            p.get('public_key'),
+            p.get('dns'),
+            p.get('dns_override') or '',
+            p.get('tunnel_mode') or 'full',
+            p.get('custom_routes') or '',
+            1 if p.get('enabled') else 0,
+            1 if active else 0,
+            p.get('rx_bytes') or 0,
+            p.get('tx_bytes') or 0,
+            raw_hs or '',
+            p.get('expires_at') or '',
+            p.get('created_at') or '',
+            p.get('updated_at') or '',
+            (p.get('notes') or '').replace('\r', ' ').replace('\n', ' '),
+        ])
+    payload = buf.getvalue().encode('utf-8')
+    fname = f'traverse-peers-{today}.csv'
+    return send_file(
+        io.BytesIO(payload),
+        mimetype='text/csv',
+        as_attachment=True,
+        download_name=fname,
+    )
 
 
 # ── Pi-hole DNS toggle ────────────────────────────────────────────────────────

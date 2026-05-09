@@ -16,6 +16,9 @@
 
   <canvas id="topo-canvas" style="display:block; width:100%; height:100%; cursor:default;"></canvas>
 
+  <!-- Slow-rotating dashed ring around the server node (CSS-driven, shown only when peers exist) -->
+  <div class="topology-server-ring" id="topo-server-ring" aria-hidden="true" style="display:none;"></div>
+
   <!-- Legend — top-right corner inside the card -->
   <div id="topo-legend" style="position:absolute; top:14px; right:14px;
        background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius);
@@ -64,6 +67,7 @@
   const tooltip = document.getElementById('topo-tooltip');
   const card    = canvas.parentElement;
 
+  const ringEl   = document.getElementById('topo-server-ring');
   let nodes      = [];
   let endpoint   = '';
   let W = 0, H = 0;
@@ -117,6 +121,7 @@
   function drawFrame() {
     ctx.clearRect(0, 0, W, H);
     if (nodes.length === 0) {
+      if (ringEl) ringEl.style.display = 'none';
       ctx.fillStyle = C_INACTIVE;
       ctx.font = '500 13px "Inter", "Segoe UI", system-ui, sans-serif';
       ctx.textAlign = 'center';
@@ -124,6 +129,7 @@
       ctx.fillText('No peers configured', W / 2, H / 2);
       return;
     }
+    if (ringEl) ringEl.style.display = '';
 
     const { cx, cy } = layoutNodes();
     clickables = [];

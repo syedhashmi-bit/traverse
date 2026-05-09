@@ -10,9 +10,14 @@
       System notifications — {{ alerts|selectattr('seen','equalto',0)|list|length }} unseen
     </div>
   </div>
-  <form method="POST" action="{{ url_for('alerts.mark_seen') }}">
-    <button type="submit" class="btn btn-secondary">✓ Mark all seen</button>
-  </form>
+  <div style="display:flex; gap:8px;">
+    {% if alerts %}
+    <a href="{{ url_for('alerts.export_csv') }}" class="btn btn-secondary" title="Download as CSV">↓ CSV</a>
+    {% endif %}
+    <form method="POST" action="{{ url_for('alerts.mark_seen') }}">
+      <button type="submit" class="btn btn-secondary">✓ Mark all seen</button>
+    </form>
+  </div>
 </div>
 
 {% if alerts %}
@@ -56,11 +61,10 @@
 </div>
 {% else %}
 <div class="card">
-  <div class="empty-state">
-    <div class="empty-state-icon">⚑</div>
-    <div class="empty-state-text">No alerts yet.<br>
-      <span class="text-dim text-sm">Alerts appear here when peers go inactive, expire, or WireGuard goes down.</span>
-    </div>
+  <div class="empty-state-friendly">
+    <div class="empty-state-icon-lg">✓</div>
+    <div class="empty-state-heading">All clear</div>
+    <div class="empty-state-sub">No active alerts. Notifications appear here when peers go inactive, expire, or WireGuard goes down.</div>
   </div>
 </div>
 {% endif %}

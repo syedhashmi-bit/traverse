@@ -165,6 +165,416 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 })();
 
+// ── Toast notifications (window.toast) ─────────────────────────────────
+(function () {
+  function getContainer() {
+    let el = document.getElementById('toast-container');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'toast-container';
+      document.body.appendChild(el);
+    }
+    return el;
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  const ICONS = { success: '✓', error: '✕', warning: '⚠', info: 'ℹ' };
+
+  window.toast = function (message, type, opts) {
+    type = type || 'info';
+    opts = opts || {};
+    const ttl = opts.ttl == null ? 4000 : opts.ttl;
+    const container = getContainer();
+    const node = document.createElement('div');
+    node.className = 'toast toast-' + type;
+    node.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    node.innerHTML =
+      '<span class="toast-icon">' + (ICONS[type] || ICONS.info) + '</span>' +
+      '<div class="toast-body">' + escapeHtml(message) + '</div>' +
+      '<button type="button" class="toast-close" aria-label="Close">×</button>';
+
+    const dismiss = () => {
+      if (node._gone) return;
+      node._gone = true;
+      node.classList.add('toast-leaving');
+      setTimeout(() => { if (node.parentNode) node.parentNode.removeChild(node); }, 220);
+    };
+    node.querySelector('.toast-close').addEventListener('click', dismiss);
+
+    container.appendChild(node);
+
+    if (ttl > 0) setTimeout(dismiss, ttl);
+    return { dismiss: dismiss, el: node };
+  };
+})();
+
+// ── Top loading bar (window.tvProgress) ────────────────────────────────
+(function () {
+  function getBar() {
+    let bar = document.getElementById('tv-loading-bar');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'tv-loading-bar';
+      document.body.appendChild(bar);
+    }
+    return bar;
+  }
+
+  let pending = 0;
+  let trickleTimer = null;
+  let progress = 0;
+
+  function trickle() {
+    if (pending <= 0) return;
+    const inc = (1 - progress) * 0.06;
+    progress = Math.min(0.95, progress + inc);
+    setBar(progress);
+    trickleTimer = setTimeout(trickle, 220);
+  }
+
+  function setBar(frac) {
+    const bar = getBar();
+    bar.style.width = (frac * 100).toFixed(2) + 'vw';
+  }
+
+  window.tvProgress = {
+    start() {
+      pending++;
+      const bar = getBar();
+      bar.classList.remove('tv-loading-done');
+      bar.classList.add('tv-loading-active');
+      if (pending === 1) {
+        progress = 0.08;
+        setBar(progress);
+        if (trickleTimer) clearTimeout(trickleTimer);
+        trickleTimer = setTimeout(trickle, 220);
+      }
+    },
+    done() {
+      pending = Math.max(0, pending - 1);
+      if (pending === 0) {
+        if (trickleTimer) { clearTimeout(trickleTimer); trickleTimer = null; }
+        progress = 1;
+        setBar(progress);
+        const bar = getBar();
+        bar.classList.add('tv-loading-done');
+        setTimeout(() => {
+          if (pending === 0) {
+            bar.classList.remove('tv-loading-active', 'tv-loading-done');
+            bar.style.width = '0';
+            progress = 0;
+          }
+        }, 600);
+      }
+    },
+  };
+
+  // Wrap fetch to show progress for non-trivial calls. Skip /api/stats and
+  // similar 1s pollers so the bar isn't constantly active.
+  const origFetch = window.fetch;
+  if (typeof origFetch === 'function' && !window._tvFetchWrapped) {
+    window._tvFetchWrapped = true;
+    const SKIP = /\/api\/(stats|server\/health|pihole-stats|peer\/\d+\/sparkline|peer\/\d+\/ping|events\/latest|notifications\/status|pihole\/top-blocked|peer-locations|server-location)\b/;
+    window.fetch = function (input, init) {
+      const url = typeof input === 'string' ? input : (input && input.url) || '';
+      const skip = SKIP.test(url);
+      if (!skip) window.tvProgress.start();
+      const p = origFetch.apply(this, arguments);
+      if (!skip) p.finally(() => window.tvProgress.done());
+      return p;
+    };
+  }
+})();
+
+// ── Confirm modal (window.confirmDialog) ────────────────────────────────
+(function () {
+  window.confirmDialog = function (opts) {
+    opts = opts || {};
+    const title = opts.title || 'Are you sure?';
+    const body  = opts.body  || '';
+    const yes   = opts.confirmLabel || 'Confirm';
+    const no    = opts.cancelLabel  || 'Cancel';
+    const danger = !!opts.danger;
+
+    return new Promise(resolve => {
+      const overlay = document.createElement('div');
+      overlay.className = 'tv-modal-overlay';
+      overlay.innerHTML =
+        '<div class="tv-modal" role="dialog" aria-modal="true">' +
+          '<div class="tv-modal-hdr"></div>' +
+          '<div class="tv-modal-body"></div>' +
+          '<div class="tv-modal-actions">' +
+            '<button type="button" class="btn btn-secondary tv-modal-cancel"></button>' +
+            '<button type="button" class="btn ' + (danger ? 'btn-danger' : 'btn-primary') + ' tv-modal-confirm"></button>' +
+          '</div>' +
+        '</div>';
+      overlay.querySelector('.tv-modal-hdr').textContent = title;
+      overlay.querySelector('.tv-modal-body').textContent = body;
+      overlay.querySelector('.tv-modal-cancel').textContent = no;
+      overlay.querySelector('.tv-modal-confirm').textContent = yes;
+
+      function cleanup(result) {
+        document.removeEventListener('keydown', onKey);
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        resolve(result);
+      }
+      function onKey(e) {
+        if (e.key === 'Escape') cleanup(false);
+        else if (e.key === 'Enter') cleanup(true);
+      }
+
+      overlay.querySelector('.tv-modal-cancel').addEventListener('click', () => cleanup(false));
+      overlay.querySelector('.tv-modal-confirm').addEventListener('click', () => cleanup(true));
+      overlay.addEventListener('click', e => { if (e.target === overlay) cleanup(false); });
+      document.addEventListener('keydown', onKey);
+
+      document.body.appendChild(overlay);
+      // Focus the confirm button shortly so Enter works
+      setTimeout(() => overlay.querySelector('.tv-modal-confirm').focus(), 50);
+    });
+  };
+
+  // Auto-upgrade existing data-confirm forms once DOM ready (defer so the
+  // legacy DOMContentLoaded handler that uses native confirm() runs first
+  // and we can replace its behavior).
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('form[data-confirm]').forEach(form => {
+      // Replace default-prevent with promise-based confirm
+      // Remove all prior submit listeners by cloning is too aggressive — instead,
+      // mark the form so the legacy handler in this file knows to skip.
+      form.dataset.confirmUpgraded = '1';
+      form.addEventListener('submit', function (e) {
+        if (form._tvProceed) return; // allow second submit after confirm
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        const danger = form.classList.contains('danger') ||
+                       /delete|remove|kill|stop|reset/i.test(form.dataset.confirm || '');
+        window.confirmDialog({
+          title: form.dataset.confirmTitle || 'Are you sure?',
+          body:  form.dataset.confirm,
+          confirmLabel: form.dataset.confirmLabel || (danger ? 'Confirm' : 'Continue'),
+          danger: danger,
+        }).then(ok => {
+          if (!ok) return;
+          form._tvProceed = true;
+          form.submit();
+        });
+      }, true); // capture, runs before the legacy native-confirm handler
+    });
+  });
+})();
+
+// ── Keyboard shortcuts ─────────────────────────────────────────────────
+(function () {
+  function isTyping(e) {
+    const t = e.target;
+    if (!t) return false;
+    if (t.isContentEditable) return true;
+    const tag = (t.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
+    return false;
+  }
+
+  // Mac uses Cmd, others use Ctrl
+  function isMod(e) { return e.metaKey || e.ctrlKey; }
+
+  let waitingForG = false;
+  let gTimeout = null;
+
+  document.addEventListener('keydown', e => {
+    // Cmd/Ctrl+K — command palette
+    if (isMod(e) && (e.key === 'k' || e.key === 'K')) {
+      e.preventDefault();
+      if (window.tvCmdPalette) window.tvCmdPalette.toggle();
+      return;
+    }
+
+    // Skip when typing in inputs (except for Escape, handled per-component)
+    if (isTyping(e)) return;
+    if (e.altKey || e.metaKey || e.ctrlKey) return;
+
+    // 'g' starts a sequence: g d, g p, g m, g a, g s, g h, g l, g n, g t
+    if (e.key === 'g' || e.key === 'G') {
+      waitingForG = true;
+      if (gTimeout) clearTimeout(gTimeout);
+      gTimeout = setTimeout(() => { waitingForG = false; }, 1000);
+      return;
+    }
+    if (waitingForG) {
+      const map = {
+        d: '/',                  h: '/',
+        p: '/peers/',
+        m: '/map',
+        a: '/alerts',
+        s: '/settings/',
+        l: '/logs',
+        n: '/notifications',
+        t: '/topology',
+        y: '/history',
+        f: '/port-forwards/',
+      };
+      const dest = map[(e.key || '').toLowerCase()];
+      if (dest) {
+        e.preventDefault();
+        window.location.href = dest;
+      }
+      waitingForG = false;
+      if (gTimeout) clearTimeout(gTimeout);
+      return;
+    }
+
+    // ?  — open help
+    if (e.key === '?') {
+      const btn = document.getElementById('help-toggle');
+      if (btn) { e.preventDefault(); btn.click(); }
+      return;
+    }
+
+    // / — focus first search input on the page if any
+    if (e.key === '/') {
+      const input = document.getElementById('peer-search') ||
+                    document.querySelector('input[type="search"]');
+      if (input) {
+        e.preventDefault();
+        input.focus();
+        input.select && input.select();
+      }
+      return;
+    }
+
+    // n — new peer (only on peers list / dashboard)
+    if (e.key === 'n' || e.key === 'N') {
+      const path = window.location.pathname;
+      if (path === '/' || path.startsWith('/peers')) {
+        e.preventDefault();
+        window.location.href = '/peers/wizard';
+      }
+      return;
+    }
+  });
+})();
+
+// ── Command palette (Cmd/Ctrl+K) ───────────────────────────────────────
+(function () {
+  let overlay = null;
+  let listEl  = null;
+  let inputEl = null;
+  let activeIdx = 0;
+  let visibleItems = [];
+
+  // Static command catalogue. Could be extended to include peer names from
+  // the page once we have a peer list endpoint with cheap queries.
+  const COMMANDS = [
+    { id: 'goto-dashboard', label: 'Go to Dashboard',     icon: '⌂', url: '/',                  hint: 'g d' },
+    { id: 'goto-peers',     label: 'Go to All Peers',     icon: '◈', url: '/peers/',            hint: 'g p' },
+    { id: 'goto-add',       label: 'Add Peer',            icon: '+', url: '/peers/wizard',      hint: 'n'   },
+    { id: 'goto-map',       label: 'Open Map',            icon: '🌍', url: '/map',              hint: 'g m' },
+    { id: 'goto-topology',  label: 'Open Topology',       icon: '⌬', url: '/topology',         hint: 'g t' },
+    { id: 'goto-alerts',    label: 'Open Alerts',         icon: '⚑', url: '/alerts',           hint: 'g a' },
+    { id: 'goto-history',   label: 'Connection History',  icon: '◷', url: '/history',          hint: 'g y' },
+    { id: 'goto-logs',      label: 'System Logs',         icon: '≡', url: '/logs',             hint: 'g l' },
+    { id: 'goto-notif',     label: 'Notifications',       icon: '🔔', url: '/notifications',   hint: 'g n' },
+    { id: 'goto-portfwd',   label: 'Port Forwards',       icon: '⇄', url: '/port-forwards/',   hint: 'g f' },
+    { id: 'goto-settings',  label: 'Settings',            icon: '⚙', url: '/settings/',        hint: 'g s' },
+    { id: 'goto-about',     label: 'About / Changelog',   icon: 'ℹ', url: '/about',            hint: ''    },
+    { id: 'theme-toggle',   label: 'Toggle Theme',        icon: '☼', action: () => document.getElementById('theme-toggle')?.click(), hint: '' },
+    { id: 'help',           label: 'Show Help',           icon: '?', action: () => document.getElementById('help-toggle')?.click(), hint: '?' },
+    { id: 'logout',         label: 'Sign Out',            icon: '⎋', url: '/logout',           hint: ''    },
+  ];
+
+  function ensureOverlay() {
+    if (overlay) return;
+    overlay = document.createElement('div');
+    overlay.className = 'cmd-palette-overlay';
+    overlay.style.display = 'none';
+    overlay.innerHTML =
+      '<div class="cmd-palette" role="dialog" aria-modal="true" aria-label="Command palette">' +
+        '<input class="cmd-palette-input" type="text" placeholder="Type a command or page…" autocomplete="off" spellcheck="false">' +
+        '<ul class="cmd-palette-list" role="listbox"></ul>' +
+      '</div>';
+    document.body.appendChild(overlay);
+
+    inputEl = overlay.querySelector('.cmd-palette-input');
+    listEl  = overlay.querySelector('.cmd-palette-list');
+
+    inputEl.addEventListener('input', renderList);
+    inputEl.addEventListener('keydown', onInputKey);
+    overlay.addEventListener('click', e => { if (e.target === overlay) hide(); });
+  }
+
+  function renderList() {
+    const q = (inputEl.value || '').trim().toLowerCase();
+    visibleItems = !q ? COMMANDS.slice() :
+      COMMANDS.filter(c => c.label.toLowerCase().includes(q));
+    activeIdx = 0;
+    if (visibleItems.length === 0) {
+      listEl.innerHTML = '<li class="cmd-palette-empty">No matches</li>';
+      return;
+    }
+    listEl.innerHTML = visibleItems.map((c, i) =>
+      '<li class="cmd-palette-item' + (i === activeIdx ? ' active' : '') + '" data-idx="' + i + '">' +
+        '<span class="cmd-palette-icon">' + c.icon + '</span>' +
+        '<span class="cmd-palette-label">' + c.label + '</span>' +
+        (c.hint ? '<span class="cmd-palette-hint">' + c.hint + '</span>' : '') +
+      '</li>'
+    ).join('');
+    Array.from(listEl.children).forEach(li => {
+      li.addEventListener('click', () => execItem(parseInt(li.dataset.idx, 10)));
+      li.addEventListener('mousemove', () => setActive(parseInt(li.dataset.idx, 10)));
+    });
+  }
+
+  function setActive(i) {
+    if (i < 0 || i >= visibleItems.length) return;
+    activeIdx = i;
+    Array.from(listEl.children).forEach((li, idx) => {
+      li.classList.toggle('active', idx === i);
+    });
+  }
+
+  function execItem(i) {
+    const c = visibleItems[i];
+    if (!c) return;
+    hide();
+    if (c.action) c.action();
+    else if (c.url) window.location.href = c.url;
+  }
+
+  function onInputKey(e) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActive(Math.min(visibleItems.length - 1, activeIdx + 1)); scrollActive(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(Math.max(0, activeIdx - 1)); scrollActive(); }
+    else if (e.key === 'Enter') { e.preventDefault(); execItem(activeIdx); }
+    else if (e.key === 'Escape') { e.preventDefault(); hide(); }
+  }
+
+  function scrollActive() {
+    const li = listEl.children[activeIdx];
+    if (li && li.scrollIntoView) li.scrollIntoView({ block: 'nearest' });
+  }
+
+  function show() {
+    ensureOverlay();
+    overlay.style.display = 'flex';
+    inputEl.value = '';
+    renderList();
+    setTimeout(() => inputEl.focus(), 30);
+  }
+
+  function hide() {
+    if (!overlay) return;
+    overlay.style.display = 'none';
+  }
+
+  window.tvCmdPalette = {
+    show, hide,
+    toggle() { if (overlay && overlay.style.display === 'flex') hide(); else show(); },
+  };
+})();
+
 // ── Browser push notifications + sound hook ───────────────────────
 (function () {
   // Only run on authenticated pages (sidebar present)

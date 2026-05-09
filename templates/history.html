@@ -8,6 +8,9 @@
     <div class="section-title">Connection History</div>
     <div class="section-sub">Last 200 connect/disconnect events, newest first</div>
   </div>
+  {% if events %}
+  <a href="{{ url_for('history.export_csv') }}" class="btn btn-secondary" title="Download as CSV">↓ CSV</a>
+  {% endif %}
 </div>
 
 {% if events %}
@@ -50,12 +53,11 @@
 </div>
 {% else %}
 <div class="card">
-  <div class="empty-state">
-    <div class="empty-state-icon">◈</div>
-    <div class="empty-state-text">
-      No connection events yet.<br>
-      <span class="text-dim text-sm">Events are recorded as peers connect and disconnect.</span>
-    </div>
+  <div class="empty-state-friendly">
+    <div class="empty-state-icon-lg">◷</div>
+    <div class="empty-state-heading">No connection events yet</div>
+    <div class="empty-state-sub">Events appear here as peers connect, disconnect, or get killed.</div>
+    <a href="{{ url_for('peers.list_peers') }}" class="btn btn-secondary" style="margin-top:18px;">View Peers</a>
   </div>
 </div>
 {% endif %}

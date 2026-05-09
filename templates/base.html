@@ -32,6 +32,12 @@
 </head>
 <body class="{% block body_class %}{% endblock %}">
 
+<!-- ── Top loading bar (fetch progress) ──────────────────────────────── -->
+<div id="tv-loading-bar" aria-hidden="true"></div>
+
+<!-- ── Toast notifications container ────────────────────────────────── -->
+<div id="toast-container" aria-live="polite" aria-atomic="false"></div>
+
 <!-- ── PWA install banner (Android / desktop Chrome) ─────────────────── -->
 <div id="install-banner" class="install-banner" style="display:none;" role="region" aria-label="Install traverse">
   <span class="install-banner-text">📱 Install traverse as an app</span>
@@ -297,6 +303,24 @@
           <li>Hover the WG status in the sidebar to see the interface state</li>
           <li>Sound &amp; browser notifications fire on connect / disconnect — toggle with 🔔</li>
         </ul>
+      </div>
+
+      <div class="help-section">
+        <div class="help-section-title">Keyboard Shortcuts</div>
+        <div class="shortcut-row"><span class="shortcut-keys"><kbd>?</kbd></span>Open help</div>
+        <div class="shortcut-row"><span class="shortcut-keys"><kbd>Cmd</kbd>+<kbd>K</kbd></span>Command palette (jump anywhere)</div>
+        <div class="shortcut-row"><span class="shortcut-keys"><kbd>/</kbd></span>Focus search</div>
+        <div class="shortcut-row"><span class="shortcut-keys"><kbd>n</kbd></span>New peer (from dashboard / peers)</div>
+        <div class="shortcut-row"><span class="shortcut-keys"><kbd>g</kbd> <kbd>d</kbd></span>Go to Dashboard</div>
+        <div class="shortcut-row"><span class="shortcut-keys"><kbd>g</kbd> <kbd>p</kbd></span>Go to Peers</div>
+        <div class="shortcut-row"><span class="shortcut-keys"><kbd>g</kbd> <kbd>m</kbd></span>Go to Map</div>
+        <div class="shortcut-row"><span class="shortcut-keys"><kbd>g</kbd> <kbd>a</kbd></span>Go to Alerts</div>
+        <div class="shortcut-row"><span class="shortcut-keys"><kbd>g</kbd> <kbd>t</kbd></span>Go to Topology</div>
+        <div class="shortcut-row"><span class="shortcut-keys"><kbd>g</kbd> <kbd>y</kbd></span>Go to History</div>
+        <div class="shortcut-row"><span class="shortcut-keys"><kbd>g</kbd> <kbd>l</kbd></span>Go to Logs</div>
+        <div class="shortcut-row"><span class="shortcut-keys"><kbd>g</kbd> <kbd>n</kbd></span>Go to Notifications</div>
+        <div class="shortcut-row"><span class="shortcut-keys"><kbd>g</kbd> <kbd>f</kbd></span>Go to Port Forwards</div>
+        <div class="shortcut-row"><span class="shortcut-keys"><kbd>g</kbd> <kbd>s</kbd></span>Go to Settings</div>
       </div>
 
       <div class="help-section">

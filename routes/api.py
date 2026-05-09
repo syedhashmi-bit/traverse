@@ -230,6 +230,19 @@ def events_latest():
     return jsonify({'events': get_recent_connection_events(seconds=70)})
 
 
+@api_bp.route('/api/events/recent')
+@login_required
+def events_recent():
+    """Return the most recent N connection events for the dashboard feed widget."""
+    from database import get_connection_events
+    limit = request.args.get('limit', 12, type=int)
+    if limit < 1:
+        limit = 1
+    if limit > 50:
+        limit = 50
+    return jsonify({'events': get_connection_events(limit=limit)})
+
+
 @api_bp.route('/api/peer/<int:peer_id>/sparkline')
 @login_required
 def peer_sparkline(peer_id):

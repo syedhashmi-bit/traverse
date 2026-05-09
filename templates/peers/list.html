@@ -15,39 +15,98 @@
              placeholder="Search name, IP, device…" autocomplete="off">
       <button type="button" id="peer-search-clear" class="peer-search-clear" title="Clear" style="display:none;">×</button>
     </div>
+    <a href="{{ url_for('peers.export_csv') }}" class="btn btn-secondary" title="Export peer list as CSV">↓ CSV</a>
     {% endif %}
     <a href="{{ url_for('peers.create') }}" class="btn btn-primary">+ Add Peer</a>
   </div>
 </div>
 
 {% if peers %}
+<!-- Filter chips -->
+<div class="filter-chips" id="peer-filter-chips">
+  <div class="filter-chip-group">
+    <span class="filter-chip-group-label">Tunnel</span>
+    <button type="button" class="filter-chip" data-filter="tunnel" data-value="full">Full</button>
+    <button type="button" class="filter-chip" data-filter="tunnel" data-value="vpn_only">VPN</button>
+    <button type="button" class="filter-chip" data-filter="tunnel" data-value="split">Split</button>
+  </div>
+  <div class="filter-chip-group">
+    <span class="filter-chip-group-label">Status</span>
+    <button type="button" class="filter-chip" data-filter="status" data-value="active">Active</button>
+    <button type="button" class="filter-chip" data-filter="status" data-value="inactive">Inactive</button>
+    <button type="button" class="filter-chip" data-filter="status" data-value="disabled">Disabled</button>
+  </div>
+  <div class="filter-chip-group">
+    <span class="filter-chip-group-label">Device</span>
+    <button type="button" class="filter-chip" data-filter="device" data-value="phone" title="phone">📱</button>
+    <button type="button" class="filter-chip" data-filter="device" data-value="laptop" title="laptop">💻</button>
+    <button type="button" class="filter-chip" data-filter="device" data-value="desktop" title="desktop">🖥</button>
+    <button type="button" class="filter-chip" data-filter="device" data-value="tablet" title="tablet">📟</button>
+    <button type="button" class="filter-chip" data-filter="device" data-value="router" title="router">🖧</button>
+    <button type="button" class="filter-chip" data-filter="device" data-value="other" title="other">◈</button>
+  </div>
+  <button type="button" class="filter-chip-clear" id="chip-clear-all" style="display:none;">Clear filters</button>
+</div>
+
+<!-- Bulk action bar -->
+<div class="bulk-action-bar" id="bulk-bar">
+  <span><span class="bulk-action-count" id="bulk-count">0</span> selected</span>
+  <button type="button" class="btn btn-secondary btn-sm" id="bulk-disable">○ Disable</button>
+  <button type="button" class="btn btn-secondary btn-sm" id="bulk-enable">● Enable</button>
+  <button type="button" class="btn btn-danger btn-sm" id="bulk-delete">Delete</button>
+  <span class="bulk-action-spacer"></span>
+  <button type="button" class="btn btn-ghost btn-sm" id="bulk-clear">Clear selection</button>
+</div>
+
 <div class="table-wrap">
-  <table>
+  <table id="peers-table">
     <thead>
       <tr>
-        <th>#</th>
-        <th>Name</th>
-        <th>Device</th>
-        <th>VPN IP</th>
+        <th class="bulk-col" style="width:36px;">
+          <input type="checkbox" id="bulk-master" aria-label="Select all visible peers">
+        </th>
+        <th class="sortable" data-sort-key="id">#<span class="sort-arrow">▾</span></th>
+        <th class="sortable" data-sort-key="name">Name<span class="sort-arrow">▾</span></th>
+        <th class="sortable" data-sort-key="device">Device<span class="sort-arrow">▾</span></th>
+        <th class="sortable" data-sort-key="ip">VPN IP<span class="sort-arrow">▾</span></th>
         <th>DNS</th>
-        <th>Tunnel</th>
-        <th>Status</th>
-        <th>Last Seen</th>
+        <th class="sortable" data-sort-key="tunnel">Tunnel<span class="sort-arrow">▾</span></th>
+        <th class="sortable" data-sort-key="status">Status<span class="sort-arrow">▾</span></th>
+        <th class="sortable" data-sort-key="handshake">Last Seen<span class="sort-arrow">▾</span></th>
         <th>Session</th>
-        <th>RX / TX</th>
+        <th class="sortable" data-sort-key="rxtx">RX / TX<span class="sort-arrow">▾</span></th>
         <th>Traffic</th>
-        <th>Expires</th>
-        <th>Created</th>
+        <th class="sortable" data-sort-key="expires">Expires<span class="sort-arrow">▾</span></th>
+        <th class="sortable" data-sort-key="created">Created<span class="sort-arrow">▾</span></th>
         <th>Actions</th>
       </tr>
     </thead>
     <tbody>
       {% for peer in peers %}
+      {% set status = ('active' if peer.is_active else ('disabled' if not peer.enabled else 'inactive')) %}
+      {% set ip_parts = peer.vpn_ip.split('.') %}
+      {% set ip_sortable = '%03d.%03d.%03d.%03d'|format(
+            ip_parts[0]|int, ip_parts[1]|int, ip_parts[2]|int, ip_parts[3]|int
+          ) if ip_parts|length == 4 else peer.vpn_ip %}
       <tr class="clickable-row peer-row"
           data-href="{{ url_for('peers.detail', peer_id=peer.id) }}"
+          data-id="{{ peer.id }}"
           data-name="{{ peer.name|lower }}"
           data-ip="{{ peer.vpn_ip }}"
-          data-device="{{ (peer.device or 'other')|lower }}">
+          data-ip-sort="{{ ip_sortable }}"
+          data-device="{{ (peer.device or 'other')|lower }}"
+          data-tunnel="{{ peer.tunnel_mode or 'full' }}"
+          data-status="{{ status }}"
+          data-handshake="{{ peer.last_handshake_raw or '0' }}"
+          data-rx="{{ peer.rx_bytes or 0 }}"
+          data-tx="{{ peer.tx_bytes or 0 }}"
+          data-rxtx="{{ (peer.rx_bytes or 0) + (peer.tx_bytes or 0) }}"
+          data-expires="{{ peer.expires_at or '' }}"
+          data-created="{{ peer.created_at or '' }}">
+        <td class="bulk-col" data-no-row-click>
+          <input type="checkbox" class="bulk-check" data-peer-id="{{ peer.id }}"
+                 data-peer-name="{{ peer.name }}" aria-label="Select {{ peer.name }}">
+        </td>
         <td class="td-mono text-dim">{{ peer.id }}</td>
         <td>
           <a href="{{ url_for('peers.detail', peer_id=peer.id) }}"
@@ -93,7 +152,7 @@
           ↓ {{ peer.rx_fmt }}<br>↑ {{ peer.tx_fmt }}
         </td>
         <td>
-          <canvas class="peer-spark"
+          <canvas class="peer-spark skeleton"
                   data-peer-id="{{ peer.id }}"
                   data-active="{{ '1' if peer.is_active else '0' }}"
                   width="120" height="32"
@@ -118,8 +177,8 @@
       </tr>
       {% endfor %}
       <tr id="peer-search-empty" style="display:none;">
-        <td colspan="14" style="padding:24px; text-align:center; color:var(--text-muted);">
-          🔍 No peers match <span id="peer-search-term" class="mono"></span>
+        <td colspan="15" style="padding:24px; text-align:center; color:var(--text-muted);">
+          🔍 No peers match the current filters <span id="peer-search-term" class="mono"></span>
         </td>
       </tr>
     </tbody>
@@ -152,31 +211,39 @@
   });
 })();
 
-/* ── Per-row Kill button ───────────────────────────────────────────── */
+/* ── Per-row Kill button (now uses modal + toast) ─────────────────── */
 (function () {
   document.querySelectorAll('.row-kill-btn').forEach(btn => {
-    btn.addEventListener('click', e => {
+    btn.addEventListener('click', async e => {
       e.stopPropagation();   // don't trigger row click
       const name = btn.dataset.peerName;
       const id   = btn.dataset.peerId;
-      if (!confirm(`Kill peer "${name}"?\nDisconnect them from wg0 immediately and disable.`)) return;
+      const ok = await window.confirmDialog({
+        title: 'Kill peer "' + name + '"?',
+        body:  'Disconnect them from wg0 immediately and disable.',
+        confirmLabel: 'Kill',
+        danger: true,
+      });
+      if (!ok) return;
       btn.disabled = true;
       const orig = btn.textContent;
       btn.textContent = '…';
       fetch('/api/peer/' + id + '/kill', { method: 'POST', credentials: 'same-origin' })
         .then(r => r.json())
         .then(d => {
-          if (d.ok) window.location.reload();
-          else {
+          if (d.ok) {
+            window.toast && window.toast('Peer "' + name + '" killed.', 'success');
+            setTimeout(() => window.location.reload(), 600);
+          } else {
             btn.disabled = false;
             btn.textContent = orig;
-            alert('Kill failed: ' + (d.error || 'unknown'));
+            window.toast && window.toast('Kill failed: ' + (d.error || 'unknown'), 'error');
           }
         })
         .catch(err => {
           btn.disabled = false;
           btn.textContent = orig;
-          alert('Kill request failed: ' + err);
+          window.toast && window.toast('Kill request failed: ' + err, 'error');
         });
     });
   });
@@ -263,10 +330,14 @@
     document.querySelectorAll('canvas.peer-spark').forEach(c => {
       const id     = c.dataset.peerId;
       const active = c.dataset.active === '1';
+      const finish = vals => {
+        c.classList.remove('skeleton');
+        drawSpark(c, vals, active);
+      };
       fetch('/api/peer/' + id + '/sparkline')
         .then(r => r.json())
-        .then(d => drawSpark(c, d.values || [], active))
-        .catch(() => drawSpark(c, [], active));
+        .then(d => finish(d.values || []))
+        .catch(() => finish([]));
     });
   }
   // Defer until after page paint so we don't block render
@@ -277,49 +348,237 @@
   }
 })();
 
-/* ── Peer search/filter ────────────────────────────────────────────── */
+/* ── Unified search + chips + sort + bulk select ───────────────────── */
 (function () {
-  const input  = document.getElementById('peer-search');
-  const clear  = document.getElementById('peer-search-clear');
-  const empty  = document.getElementById('peer-search-empty');
-  const term   = document.getElementById('peer-search-term');
-  const sub    = document.getElementById('peer-count-sub');
-  const rows   = Array.from(document.querySelectorAll('tr.peer-row'));
-  const total  = rows.length;
-  if (!input) return;
+  const input    = document.getElementById('peer-search');
+  const clearBtn = document.getElementById('peer-search-clear');
+  const empty    = document.getElementById('peer-search-empty');
+  const term     = document.getElementById('peer-search-term');
+  const sub      = document.getElementById('peer-count-sub');
+  const tbody    = document.querySelector('#peers-table tbody');
+  const tableEl  = document.getElementById('peers-table');
+  const rows     = Array.from(document.querySelectorAll('tr.peer-row'));
+  const total    = rows.length;
+  if (!tableEl) return;
 
-  function apply() {
-    const q = input.value.trim().toLowerCase();
-    clear.style.display = q ? 'inline-flex' : 'none';
-    let shown = 0;
-    rows.forEach(r => {
-      if (!q) { r.style.display = ''; shown++; return; }
+  // Active chip filters: { tunnel: Set, status: Set, device: Set }
+  const filters = { tunnel: new Set(), status: new Set(), device: new Set() };
+  // Sort state: { key: string|null, dir: 'asc' | 'desc' }
+  const SORT_KEY = 'traverse-peers-sort';
+  let sortState = { key: null, dir: 'asc' };
+  try {
+    const saved = JSON.parse(localStorage.getItem(SORT_KEY) || 'null');
+    if (saved && saved.key) sortState = saved;
+  } catch (e) {}
+
+  function rowMatches(r) {
+    // Text search
+    if (input && input.value.trim()) {
+      const q   = input.value.trim().toLowerCase();
       const hay = (r.dataset.name || '') + ' ' +
                   (r.dataset.ip   || '') + ' ' +
                   (r.dataset.device || '');
-      const match = hay.indexOf(q) !== -1;
+      if (hay.indexOf(q) === -1) return false;
+    }
+    // Chip filters — within a dimension, OR; across dimensions, AND
+    for (const dim of ['tunnel', 'status', 'device']) {
+      if (filters[dim].size === 0) continue;
+      const v = r.dataset[dim] || '';
+      if (!filters[dim].has(v)) return false;
+    }
+    return true;
+  }
+
+  function applyFilters() {
+    if (clearBtn) clearBtn.style.display = (input && input.value) ? 'inline-flex' : 'none';
+    let shown = 0;
+    rows.forEach(r => {
+      const match = rowMatches(r);
       r.style.display = match ? '' : 'none';
       if (match) shown++;
     });
-    if (q && shown === 0) {
-      empty.style.display = '';
-      if (term) term.textContent = '"' + input.value.trim() + '"';
-    } else {
-      empty.style.display = 'none';
-    }
+    if (empty) empty.style.display = (shown === 0 ? '' : 'none');
     if (sub) {
-      sub.textContent = q
+      const anyFilter = (input && input.value) || filters.tunnel.size || filters.status.size || filters.device.size;
+      sub.textContent = anyFilter
         ? `${shown} of ${total} match`
         : `${total} registered client${total !== 1 ? 's' : ''}`;
     }
+    const clearAll = document.getElementById('chip-clear-all');
+    if (clearAll) {
+      const any = filters.tunnel.size || filters.status.size || filters.device.size;
+      clearAll.style.display = any ? 'inline-flex' : 'none';
+    }
+    updateBulkBar();
   }
 
-  input.addEventListener('input', apply);
-  clear.addEventListener('click', () => { input.value = ''; apply(); input.focus(); });
-  // Esc to clear
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { input.value = ''; apply(); }
+  // Search
+  if (input) {
+    input.addEventListener('input', applyFilters);
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { input.value = ''; applyFilters(); }
+    });
+  }
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => { input.value = ''; applyFilters(); input.focus(); });
+  }
+
+  // Filter chips
+  document.querySelectorAll('#peer-filter-chips .filter-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const dim = btn.dataset.filter;
+      const val = btn.dataset.value;
+      const set = filters[dim];
+      if (!set) return;
+      if (set.has(val)) { set.delete(val); btn.classList.remove('active'); }
+      else { set.add(val); btn.classList.add('active'); }
+      applyFilters();
+    });
   });
+  const clearAllBtn = document.getElementById('chip-clear-all');
+  if (clearAllBtn) {
+    clearAllBtn.addEventListener('click', () => {
+      ['tunnel','status','device'].forEach(d => filters[d].clear());
+      document.querySelectorAll('#peer-filter-chips .filter-chip.active').forEach(b => b.classList.remove('active'));
+      applyFilters();
+    });
+  }
+
+  // ── Sorting ───────────────────────────────────────────────────────
+  const NUMERIC_KEYS = new Set(['id', 'handshake', 'rxtx']);
+  function sortVal(row, key) {
+    if (key === 'ip') return row.dataset.ipSort || '';
+    if (NUMERIC_KEYS.has(key)) {
+      const n = parseFloat(row.dataset[key] || '0');
+      return isNaN(n) ? 0 : n;
+    }
+    return (row.dataset[key] || '').toLowerCase();
+  }
+  function applySort() {
+    if (!sortState.key) return;
+    const key = sortState.key;
+    const dir = sortState.dir === 'desc' ? -1 : 1;
+    const sorted = rows.slice().sort((a, b) => {
+      const av = sortVal(a, key), bv = sortVal(b, key);
+      if (av < bv) return -1 * dir;
+      if (av > bv) return  1 * dir;
+      return 0;
+    });
+    sorted.forEach(r => tbody.appendChild(r));
+    // The empty-state row was inside tbody — make sure it stays at the end
+    const emptyRow = document.getElementById('peer-search-empty');
+    if (emptyRow) tbody.appendChild(emptyRow);
+  }
+  function paintSortHeaders() {
+    document.querySelectorAll('#peers-table th.sortable').forEach(th => {
+      th.classList.remove('sort-asc', 'sort-desc');
+      if (th.dataset.sortKey === sortState.key) {
+        th.classList.add(sortState.dir === 'desc' ? 'sort-desc' : 'sort-asc');
+      }
+    });
+  }
+  document.querySelectorAll('#peers-table th.sortable').forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.sortKey;
+      if (sortState.key === key) {
+        sortState.dir = sortState.dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        sortState.key = key;
+        sortState.dir = 'asc';
+      }
+      try { localStorage.setItem(SORT_KEY, JSON.stringify(sortState)); } catch (e) {}
+      paintSortHeaders();
+      applySort();
+    });
+  });
+  paintSortHeaders();
+  applySort();
+
+  // ── Bulk select ───────────────────────────────────────────────────
+  const master = document.getElementById('bulk-master');
+  const bulkBar = document.getElementById('bulk-bar');
+  const bulkCount = document.getElementById('bulk-count');
+  function getSelectedIds() {
+    return Array.from(document.querySelectorAll('.bulk-check'))
+      .filter(c => c.checked && c.closest('tr').style.display !== 'none')
+      .map(c => parseInt(c.dataset.peerId, 10))
+      .filter(i => !isNaN(i));
+  }
+  function updateBulkBar() {
+    const ids = getSelectedIds();
+    if (bulkCount) bulkCount.textContent = String(ids.length);
+    if (bulkBar) bulkBar.classList.toggle('active', ids.length > 0);
+    // Update master checkbox state
+    if (master) {
+      const visibleChecks = Array.from(document.querySelectorAll('.bulk-check'))
+        .filter(c => c.closest('tr').style.display !== 'none');
+      const checked = visibleChecks.filter(c => c.checked).length;
+      master.checked       = visibleChecks.length > 0 && checked === visibleChecks.length;
+      master.indeterminate = checked > 0 && checked < visibleChecks.length;
+    }
+  }
+  if (master) {
+    master.addEventListener('change', () => {
+      const visibleChecks = Array.from(document.querySelectorAll('.bulk-check'))
+        .filter(c => c.closest('tr').style.display !== 'none');
+      visibleChecks.forEach(c => c.checked = master.checked);
+      updateBulkBar();
+    });
+  }
+  document.querySelectorAll('.bulk-check').forEach(c => {
+    c.addEventListener('change', updateBulkBar);
+    // Stop the row-click handler on the cell from triggering navigation
+    c.addEventListener('click', e => e.stopPropagation());
+  });
+  const clearSelBtn = document.getElementById('bulk-clear');
+  if (clearSelBtn) {
+    clearSelBtn.addEventListener('click', () => {
+      document.querySelectorAll('.bulk-check').forEach(c => c.checked = false);
+      if (master) { master.checked = false; master.indeterminate = false; }
+      updateBulkBar();
+    });
+  }
+
+  function bulkAction(action, label, danger) {
+    const ids = getSelectedIds();
+    if (ids.length === 0) return;
+    return window.confirmDialog({
+      title:        `${label} ${ids.length} peer${ids.length !== 1 ? 's' : ''}?`,
+      body:         action === 'delete'
+                      ? 'This will permanently remove the selected peers from the database and detach them from wg0.'
+                      : `${label} the selected peers — they will ${action === 'enable' ? 'rejoin' : 'leave'} wg0.`,
+      confirmLabel: label,
+      danger:       !!danger,
+    }).then(ok => {
+      if (!ok) return;
+      const fd = new FormData();
+      fd.append('ids', ids.join(','));
+      const path = action === 'delete'  ? '/peers/bulk-delete'
+                 : action === 'disable' ? '/peers/bulk-disable'
+                                        : '/peers/bulk-enable';
+      return fetch(path, { method: 'POST', body: fd, credentials: 'same-origin' })
+        .then(r => r.json())
+        .then(d => {
+          if (d.ok) {
+            window.toast && window.toast(`${label} succeeded for ${d.count} peer${d.count !== 1 ? 's' : ''}.`,
+                                          action === 'delete' ? 'error' : 'success');
+            setTimeout(() => window.location.reload(), 600);
+          } else {
+            window.toast && window.toast(`${label} failed: ${d.error || 'unknown'}`, 'error');
+          }
+        })
+        .catch(err => window.toast && window.toast(`${label} request failed: ${err}`, 'error'));
+    });
+  }
+  const bDis = document.getElementById('bulk-disable');
+  const bEna = document.getElementById('bulk-enable');
+  const bDel = document.getElementById('bulk-delete');
+  if (bDis) bDis.addEventListener('click', () => bulkAction('disable', 'Disable', false));
+  if (bEna) bEna.addEventListener('click', () => bulkAction('enable',  'Enable',  false));
+  if (bDel) bDel.addEventListener('click', () => bulkAction('delete',  'Delete',  true));
+
+  // First paint
+  applyFilters();
 })();
 </script>
 {% endblock %}

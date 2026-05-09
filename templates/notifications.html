@@ -209,10 +209,15 @@
   <div class="card" id="section-log">
     <div class="card-header">
       <span class="card-title">Recent Notification Attempts</span>
-      <form method="POST" action="{{ url_for('notifications.log_clear') }}"
-            onsubmit="return confirm('Clear the notification log?');">
-        <button type="submit" class="btn btn-ghost btn-sm">Clear log</button>
-      </form>
+      <div style="display:flex; gap:6px; align-items:center;">
+        {% if log_rows %}
+        <a href="{{ url_for('notifications.export_log_csv') }}" class="btn btn-ghost btn-sm" title="Download as CSV">↓ CSV</a>
+        {% endif %}
+        <form method="POST" action="{{ url_for('notifications.log_clear') }}"
+              data-confirm="Clear the notification log?" data-confirm-label="Clear">
+          <button type="submit" class="btn btn-ghost btn-sm">Clear log</button>
+        </form>
+      </div>
     </div>
     <div class="card-body">
       {% if log_rows %}
@@ -257,9 +262,10 @@
         </table>
       </div>
       {% else %}
-      <div class="empty-state">
-        <div class="empty-state-icon">∅</div>
-        <div class="empty-state-text">No notifications have been sent yet.</div>
+      <div class="empty-state-friendly" style="padding:36px 16px;">
+        <div class="empty-state-icon-lg">📭</div>
+        <div class="empty-state-heading">Nothing sent yet</div>
+        <div class="empty-state-sub">Configure a channel above and trigger an event — sends will appear here.</div>
       </div>
       {% endif %}
     </div>
