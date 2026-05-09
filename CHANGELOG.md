@@ -1,5 +1,43 @@
 # Changelog
 
+## [1.6.0] — 2026-05-09 (UI Primitives, Sortable Peers, Bulk Actions, CSV)
+
+### Added
+- **Toast notifications** — top-right slide-in toasts with success/error/warning/info variants, click-to-close, auto-dismiss after 4s. Mobile-responsive. `window.toast(msg, type, opts)`.
+- **Confirm modal** — promise-based styled modal replacing every native `confirm()` dialog. Keyboard support (Esc cancels, Enter confirms). Capture-phase form handler auto-upgrades every existing `[data-confirm]` form without per-form changes. `window.confirmDialog({title, body, confirmLabel, danger})`.
+- **Top loading bar** — 2px accent gradient at the top of the viewport during fetch activity. Auto-wraps `fetch()` globally; skip-list excludes 1-second pollers (`/api/stats`, `/api/server/health`, etc.) so it isn't perpetually active. `window.tvProgress.start() / .done()`.
+- **Command palette** — `Cmd/Ctrl+K` opens a fuzzy-search palette with 15 commands (page navigation + theme toggle + help + sign out). Arrow-key navigation, Enter selects, Escape closes.
+- **Keyboard shortcuts** — `?` opens help, `/` focuses search, `n` opens "new peer" wizard, sequence navigation: `g d` Dashboard, `g p` Peers, `g m` Map, `g a` Alerts, `g t` Topology, `g y` History, `g l` Logs, `g n` Notifications, `g f` Port Forwards, `g s` Settings.
+- **Sortable peer table** — 10 sortable columns (id, name, device, IP, tunnel, status, last seen, RX/TX, expires, created). Click header to toggle asc/desc; arrow indicator; sort state persisted to `localStorage`. IPs zero-padded for correct numeric ordering.
+- **Filter chips on `/peers/`** — three dimensions (Tunnel × Status × Device). Within-dimension OR, across-dimension AND, combinable with text search. Click a chip to toggle; "Clear filters" resets all.
+- **Bulk actions on `/peers/`** — checkbox column with master checkbox respecting visible rows (indeterminate state included). Floating action bar exposes Disable/Enable/Delete with confirmation modal. Backend endpoints `POST /peers/bulk-disable | bulk-enable | bulk-delete` accept comma-separated IDs, sync wg0, and fire per-peer notifications.
+- **CSV export** on `/peers/`, `/history`, `/alerts`, `/notifications`. Peer export strips `private_key` and `preshared_key` server-side as defense in depth. Capped at 2000 / 2000 / 2000 / 500 rows.
+- **Real-time event feed** on the dashboard right column — polls `/api/events/recent` every 30 s, renders connect/disconnect/kill events with color-coded dots and relative timestamps. Respects the global pause toggle.
+- **Skeleton states** for the rest of the live-loading panels — server health (CPU/RAM/disk/uptime/speed), Pi-hole bar (blocked/rate/blocklist/queries/clients), and the NOC PIHOLE indicator now shimmer until their `/api/server/health` and `/api/pihole-stats` fetches resolve.
+- **Topology server-node ring** — DOM overlay with the existing `.topology-server-ring` CSS animation (slow-rotating dashed border) is now wired and visible on the topology page. Hidden when no peers are configured.
+
+### Changed
+- **Friendly empty states** — `/history`, `/alerts`, and the notifications log section now use `.empty-state-friendly` (large icon + heading + sub-text + optional CTA) matching the rest of the app.
+- **Help overlay** — now lists every keyboard shortcut.
+- **`/peers/` row Kill action** — now uses the new modal + toast flow instead of native `confirm()` + `alert()`.
+- **SW cache name bumped `traverse-v2 → traverse-v3`** — installed PWA clients re-precache fresh `style.css` / `app.js` on next activation.
+
+### Light theme
+- ~150 lines of additional overrides covering: tables, search input, help overlay, form labels, badges, last-seen colors, NOC alert rows, quick nav, action buttons, install banner, sidebar nav, bottom nav, toasts, confirm modal, command palette, filter chips, skeleton, kbd, event feed, bulk action bar, sortable headers.
+
+### Database
+No schema changes. All new endpoints query existing tables.
+
+### Files Modified
+```
+routes/{peers, api, history, alerts, notifications}.py
+static/{css/style.css, js/app.js, sw.js}
+templates/{base, dashboard, peers/list, history, alerts, notifications, topology}.html
+```
++1758 / -136 lines across 15 files.
+
+---
+
 ## [1.5.0] — 2026-05-08 (Performance + Polish)
 
 ### Performance

@@ -14,18 +14,73 @@ A self-hosted WireGuard VPN dashboard built with Flask. Manage peers, monitor li
 
 ## Features
 
-- **Peer management** — create, view, and delete WireGuard peers (hard cap of 50); each peer gets a unique VPN IP automatically allocated from the configured subnet
-- **Config download & QR codes** — download a ready-to-use `.conf` file or scan an inline QR code to onboard any device in seconds
-- **Peer expiry** — set an expiry date per peer; expired peers are automatically disabled when the server starts or on each scheduled check
-- **Live traffic stats** — per-peer RX/TX bytes and transfer rate, polled every second with a 5-minute scrolling Chart.js waveform on the dashboard
-- **Connection map** — Leaflet.js world map showing the real-world location of each connected peer's endpoint IP (GeoIP via ipapi.co, cached 1 hour)
-- **Traffic history** — timestamped connection event log per peer: when they connected, disconnected, and how much data they transferred
-- **Alerts** — in-app alert feed for peer events (new connections, inactivity, WireGuard going down); unread count shown in the navbar badge
-- **Telegram notifications** — optional Telegram bot integration; get push alerts when a peer connects, goes inactive, or the WireGuard interface goes down
-- **TOTP 2FA** — optional time-based two-factor authentication (Google Authenticator / Authy compatible) on top of username/password login
-- **Interface control** — start, stop, and restart the WireGuard interface from the dashboard; view the current server config snippet
-- **Full-tunnel routing** — `AllowedIPs = 0.0.0.0/0` so all client traffic exits through your VPS; your VPS public IP becomes the client's public IP
-- **No CDN dependencies** — Chart.js, Leaflet.js, and all assets are bundled locally; works fully offline after install
+### Peer management
+- **CRUD + wizard** — create peers via a guided wizard or a direct form; auto-allocated VPN IPs (default cap 20 peers, easy to raise)
+- **Three tunnel modes** per peer — Full Tunnel (`0.0.0.0/0`), VPN Only (subnet only), or Split Tunnel (subnet + custom CIDRs)
+- **Per-peer DNS override** — pick from Pi-hole / Cloudflare / Google / Quad9 / custom; client config reflects the choice
+- **Config download & inline QR** — `.conf` files plus an embedded QR you can scan on the spot
+- **Peer expiry** — set `expires_at`; expired peers are auto-disabled
+- **Per-peer notes, device type, and location history**
+- **Kill button** — force-disconnect a peer from `wg0` and disable in one click
+- **Sortable / filterable peer table** — 10 sortable columns, filter chips for tunnel × status × device, combinable text search
+- **Bulk actions** — multi-select with master checkbox, then bulk Disable/Enable/Delete
+
+### Live monitoring
+- **1-second polling** with a 15-minute scrolling Chart.js RX/TX waveform; RAF-eased speed numbers (60 fps)
+- **NOC dashboard** — peer counts, total RX/TX, WireGuard status, server health (CPU/RAM/disk/uptime), Pi-hole status (blocked/rate/blocklist/queries/clients), VPS speedtest
+- **Real-time event feed** — connect/disconnect/kill stream on the dashboard, polls every 30 s
+- **Per-peer 24-hour bandwidth chart and 30-day daily aggregates**
+- **Sparkline canvases** per peer row showing recent throughput
+- **Connection map** — Leaflet world map with peer markers color-coded by tunnel mode (GeoIP via ipapi.co, 1-hour cache)
+- **Topology view** — radial canvas diagram with animated dashed lines on active peers and a slow-rotating server ring
+
+### Pi-hole integration (v6 API)
+- DNS-level ad blocking for every VPN client (Pi-hole listens on `10.8.0.1:53` over WireGuard)
+- Live blocked-count, rate, blocklist size, query count, and client count on the dashboard
+- Top-blocked-domains widget (5-min refresh)
+- Per-peer DNS query log on the peer detail page
+
+### Notifications & alerts
+- **Multi-channel notifications** — Email (SMTP), Telegram, and Discord at `/notifications`. Per-event toggles for 15 event types. 500-row send log with success/error breakdown.
+- **Alert feed** at `/alerts` — severity-coded; mark-seen / dismiss
+- **Connection history log** at `/history`
+- **Browser push + sound alerts** — opt-in; Web Audio tones on connect/disconnect
+
+### Quality-of-life
+- **Toast notifications** for fetch-driven actions
+- **Styled confirm modal** replacing every native `confirm()` dialog
+- **Top loading bar** during navigation / fetch activity
+- **Command palette** — `Cmd/Ctrl+K` for fuzzy navigation across the app
+- **Keyboard shortcuts** — `?` help, `/` search, `n` new peer, sequence shortcuts (`g d`, `g p`, …)
+- **CSV export** on every list page (peers, history, alerts, notifications)
+- **Skeleton states** while live values load
+- **Friendly empty states** with iconography and CTAs
+
+### Operations
+- **Port forwarding** — DNAT iptables rules at `/port-forwards/`; persisted to `/etc/iptables/rules.v4`
+- **System log viewer** at `/logs` (live tail with filter for traverse + WireGuard)
+- **Backup/restore** — JSON export of all peers/events (private keys stripped)
+- **Speedtest** widget — kicks off `speedtest-cli`, persists last 5 results
+- **WireGuard service control** — start/stop/restart from the UI
+
+### Auth & security
+- **Session-based login** with timing-safe `hmac.compare_digest`
+- **TOTP 2FA** (Google Authenticator / Authy) — optional, set `TOTP_SECRET`
+- **All secrets live in `.env`** — gitignored from commit 1; private keys never appear on the peer list
+
+### Performance
+- **Flask-Caching** — 15-second cache on `/api/server/health`, 55-second on Pi-hole stats and top-blocked
+- **Database indexes** on hot columns (peers.enabled, connection_events.timestamp, etc.)
+- **Nginx gzip + 7-day immutable `/static/` caching** — `style.css` 72.5 KB → 13.2 KB on the wire (82% smaller)
+
+### PWA
+- **Installable** on iOS Safari, Android Chrome, and desktop Chromium browsers
+- **Offline page** with auto-reload when network returns
+- Service worker network-first with cache fallback; API calls always fresh
+
+### Frontend principles
+- **No CDN dependencies** — Chart.js, Leaflet.js, all icons and assets are bundled locally
+- **No JS framework** — vanilla JS only, custom dark CSS
 
 ---
 
@@ -35,14 +90,17 @@ A self-hosted WireGuard VPN dashboard built with Flask. Manage peers, monitor li
 |-------|-----------|
 | Runtime | Python 3.12 |
 | Framework | Flask 3.1 (Blueprints) |
-| Database | SQLite (WAL mode) via stdlib `sqlite3` |
+| Database | SQLite (WAL mode) via stdlib `sqlite3` — no ORM |
+| Caching | Flask-Caching (SimpleCache) |
 | WireGuard | `wg` / `wg-quick` CLI (wireguard-tools) |
 | QR codes | `qrcode[pil]` + Pillow |
 | 2FA | `pyotp` (TOTP / RFC 6238) |
-| Alerts | Telegram Bot API (stdlib `urllib` only, no SDK) |
+| Notifications | Email (SMTP), Telegram, Discord — stdlib only (`smtplib`, `urllib.request`) |
+| Pi-hole | v6 API integration (session token + JSON) |
 | Frontend | Custom dark CSS — no JS framework, no external CDN |
 | Charts | Chart.js v4 (bundled locally) |
 | Map | Leaflet.js v1.9.4 (bundled locally) |
+| PWA | Web App Manifest + Service Worker — installable on iOS/Android/desktop |
 
 ---
 
@@ -154,9 +212,14 @@ All configuration lives in `.env`. Never commit this file.
 | `WG_DNS` | no | `1.1.1.1` | DNS server pushed to clients in their config |
 | `DATABASE_PATH` | no | `database.db` | Path to the SQLite file (relative to project root) |
 | `TOTP_SECRET` | no | — | Enables TOTP 2FA. Generate: `python3 -c "import pyotp; print(pyotp.random_base32())"` then scan the QR at `/totp-setup` |
-| `TELEGRAM_BOT_TOKEN` | no | — | Telegram bot token — both must be set to enable push alerts |
-| `TELEGRAM_CHAT_ID` | no | — | Telegram chat ID to send alerts to |
+| `TELEGRAM_BOT_TOKEN` | no | — | Legacy Telegram bot token (used by the early-boot WG-down alerter); both must be set to enable |
+| `TELEGRAM_CHAT_ID` | no | — | Legacy Telegram chat ID |
 | `ALERT_INACTIVE_HOURS` | no | `0` (disabled) | Hours of inactivity before a peer triggers an alert |
+| `PIHOLE_ENABLED` | no | — | Set to `true` / `1` / `yes` to enable the Pi-hole integration |
+| `PIHOLE_PASSWORD` | no | — | Pi-hole admin password (used for the v6 API auth dance) |
+| `PIHOLE_URL` | no | `http://10.8.0.1:8080/admin` | Pi-hole admin URL |
+
+> **Notifications module** (Email, Telegram, Discord at `/notifications`) — the canonical config store is the database (edit via the UI). `.env` keys (`NOTIFY_EMAIL_*`, `NOTIFY_TELEGRAM_*`, `NOTIFY_DISCORD_WEBHOOK`) are bootstrap fallbacks only. See `.env.example` for the full list.
 
 ---
 
@@ -348,46 +411,52 @@ certbot renew --force-renewal
 
 ```
 traverse/
-├── app.py                  # Flask app factory, blueprints, error handlers
-├── database.py             # SQLite init + all DB helpers (peers, alerts, history)
+├── app.py                  # Flask app factory, blueprints, error handlers, context processor
+├── cache_ext.py            # Shared Flask-Caching SimpleCache instance
+├── database.py             # SQLite init + idempotent migrate_db() + all DB helpers
 ├── wireguard.py            # wg CLI wrappers, key gen, IP allocation, config gen
-├── alerts.py               # Background thread: peer/WG monitoring + Telegram push
+├── alerts.py               # Background daemon thread (60s tick): WG up/down,
+│                           # peer connect/disconnect, bandwidth anomaly, expiry,
+│                           # Pi-hole liveness, location tracking
+├── notifications.py        # send_notification() + Email/Telegram/Discord senders
 ├── routes/
-│   ├── auth.py             # /login, /logout, login_required decorator
-│   ├── dashboard.py        # GET / — status cards, live chart, recent peers
-│   ├── peers.py            # Peer CRUD, config download, QR code, expiry
-│   ├── api.py              # GET /api/stats — live JSON (1-s polling, 0.85-s cache)
-│   ├── map.py              # GET /map, GET /api/peer-locations (30-s poll, 1-h geo cache)
-│   ├── settings.py         # WireGuard interface control, server config view
-│   ├── alerts.py           # Alert feed, mark-seen, dismiss
-│   └── history.py          # Per-peer connection event history
+│   ├── auth.py             # /login, /login/verify, /totp-setup, login_required
+│   ├── dashboard.py        # GET / — NOC dashboard
+│   ├── peers.py            # Peer CRUD + wizard + bulk actions + CSV export
+│   ├── api.py              # All JSON endpoints (stats, health, pihole, ping, etc.)
+│   ├── map.py              # /map + peer geo locations
+│   ├── topology.py         # /topology canvas
+│   ├── alerts.py           # Alert feed, mark-seen, dismiss, CSV export
+│   ├── history.py          # Connection event log + CSV export
+│   ├── notifications.py    # Channel config + per-event toggles + send log + CSV
+│   ├── port_forwards.py    # DNAT rules CRUD
+│   ├── logs.py             # System log tail (traverse + WireGuard)
+│   ├── about.py            # Version + changelog page
+│   ├── settings.py         # WG service control, backup/restore, Pi-hole controls
+│   └── pwa.py              # /manifest.json, /sw.js, /offline (public, no auth)
 ├── templates/
-│   ├── base.html           # Sidebar layout, flash messages, nav, alert badge
-│   ├── dashboard.html      # Live stats, Chart.js waveform, recent peers table
-│   ├── login.html          # Login form (+ TOTP field when 2FA is enabled)
-│   ├── map.html            # Leaflet map + peer sidebar
-│   ├── alerts.html         # Alert feed
-│   ├── history.html        # Connection history table
-│   ├── settings.html       # Interface control + config snippet
-│   ├── totp_setup.html     # QR code setup for TOTP 2FA
-│   ├── totp_verify.html    # TOTP verification step
-│   ├── 404.html / 500.html # Error pages
-│   └── peers/
-│       ├── list.html       # Full peer table (no private keys shown)
-│       ├── create.html     # Create peer form (shows X/50 counter)
-│       ├── detail.html     # Peer detail, keys, config, QR, live stats
-│       └── qr.html         # Standalone QR code page
+│   ├── base.html           # Sidebar + topbar + bottom nav + help overlay +
+│   │                       # toast container + loading bar
+│   ├── dashboard.html      # NOC layout, live chart, peers table, right panel,
+│   │                       # event feed
+│   ├── peers/{list,detail,create,wizard,qr}.html
+│   ├── port_forwards/index.html
+│   ├── notifications.html, settings.html, map.html, topology.html,
+│   ├── alerts.html, history.html, logs.html, about.html, offline.html
+│   ├── login.html, totp_{setup,verify}.html
+│   └── 404.html, 500.html
 ├── static/
-│   ├── css/
-│   │   ├── style.css       # Complete dark theme (CSS variables, animations)
-│   │   └── leaflet.min.css # Leaflet CSS (bundled)
-│   ├── js/
-│   │   ├── app.js          # Copy-to-clipboard, confirm-delete, flash dismiss
-│   │   ├── chart.min.js    # Chart.js v4 (bundled)
-│   │   └── leaflet.min.js  # Leaflet.js v1.9.4 (bundled)
-│   └── img/                # App screenshot, icons, Leaflet marker images
+│   ├── css/{style.css, leaflet.min.css}
+│   ├── js/{app.js, chart.min.js, leaflet.min.js}
+│   ├── icons/              # 8 PWA icon sizes + apple-touch-icon + splash
+│   ├── img/                # App logo, Leaflet markers
+│   ├── manifest.json       # PWA Web App Manifest
+│   ├── sw.js               # Service worker (network-first, /api/* always fresh)
+│   └── favicon.ico
 ├── .env.example            # Environment variable template (safe to commit)
 ├── requirements.txt        # Python dependencies
+├── VERSION                 # Plain text — current version
+├── CHANGELOG.md            # Per-version release notes
 └── database.db             # SQLite file — created automatically on first run
 ```
 
@@ -402,7 +471,8 @@ traverse/
 - **Credential comparison** uses `hmac.compare_digest` (timing-safe; prevents timing oracle attacks)
 - **Session expiry** — `session.permanent = False` so sessions die when the browser closes
 - **Secrets in `.env` only** — no credentials in code or the database
-- **50-peer hard cap** — enforced server-side in the create route; prevents runaway config growth
+- **20-peer cap** (constant `MAX_PEERS = 20` in `routes/peers.py`) — enforced server-side in the create route. Tune to fit your subnet.
+- **CSRF** — single-user / session-only deployment. CSRF tokens not currently in place; consider `flask-wtf` if multi-user.
 
 ---
 
