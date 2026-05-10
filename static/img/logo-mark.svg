@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Traverse">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"  stop-color="#1c2042"/>
+      <stop offset="100%" stop-color="#0a0c18"/>
+    </linearGradient>
+    <radialGradient id="bgGlow" cx="50%" cy="42%" r="60%">
+      <stop offset="0%"  stop-color="#3a3380" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#0a0c18" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="path" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0%"  stop-color="#bbafff"/>
+      <stop offset="55%" stop-color="#7c6af7"/>
+      <stop offset="100%" stop-color="#5042c4"/>
+    </linearGradient>
+
+    <linearGradient id="needle" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#cfc6ff"/>
+      <stop offset="100%" stop-color="#7c6af7"/>
+    </linearGradient>
+
+    <linearGradient id="needleDim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#5c4fd9"/>
+      <stop offset="100%" stop-color="#3a328c"/>
+    </linearGradient>
+
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"  stop-color="#7c6af7" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#7c6af7" stop-opacity="0.2"/>
+    </linearGradient>
+
+    <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="20"/>
+    </filter>
+  </defs>
+
+  <!-- Squircle background -->
+  <rect x="32" y="32" width="960" height="960" rx="220" fill="url(#bg)"/>
+  <rect x="32" y="32" width="960" height="960" rx="220" fill="url(#bgGlow)"/>
+  <rect x="33" y="33" width="958" height="958" rx="219"
+        fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="2"/>
+
+  <!-- Compass outer ring (centered, larger since no wordmark) -->
+  <circle cx="512" cy="512" r="350"
+          fill="none" stroke="url(#ring)" stroke-width="7"/>
+  <circle cx="512" cy="512" r="278"
+          fill="none" stroke="rgba(124,106,247,0.20)" stroke-width="2"
+          stroke-dasharray="3 10"/>
+
+  <!-- Compass needles -->
+  <path d="M 512 174 L 542 512 L 512 478 L 482 512 Z" fill="url(#needle)"/>
+  <path d="M 512 850 L 482 512 L 512 546 L 542 512 Z" fill="url(#needleDim)" opacity="0.85"/>
+  <path d="M 174 512 L 512 482 L 478 512 L 512 542 Z" fill="url(#needleDim)" opacity="0.55"/>
+  <path d="M 850 512 L 512 542 L 546 512 L 512 482 Z" fill="url(#needleDim)" opacity="0.55"/>
+
+  <!-- Glow under path -->
+  <g filter="url(#softGlow)" opacity="0.55">
+    <path d="M 360 290
+             C 360 410, 660 472, 660 580
+             C 660 688, 360 750, 360 868"
+          fill="none" stroke="#7c6af7" stroke-width="68" stroke-linecap="round"/>
+  </g>
+
+  <!-- Winding S-path -->
+  <path d="M 360 290
+           C 360 410, 660 472, 660 580
+           C 660 688, 360 750, 360 868"
+        fill="none" stroke="url(#path)" stroke-width="56" stroke-linecap="round"/>
+
+  <!-- Arrowhead -->
+  <g transform="translate(360 290) rotate(-35)">
+    <path d="M 0 -62 L 64 32 L 0 14 L -64 32 Z" fill="#dcd2ff"/>
+  </g>
+
+  <!-- Center hub -->
+  <circle cx="512" cy="512" r="30" fill="#0a0c18" stroke="#9d8eff" stroke-width="5"/>
+  <circle cx="512" cy="512" r="11" fill="#dcd2ff"/>
+</svg>
