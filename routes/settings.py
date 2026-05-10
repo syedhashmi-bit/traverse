@@ -1,5 +1,7 @@
+import ipaddress
 import json
 import os
+import re
 import subprocess
 from datetime import datetime
 from flask import Blueprint, make_response, render_template, request, redirect, url_for, flash
@@ -10,6 +12,14 @@ from wireguard import (
     WG_INTERFACE, WG_SUBNET, WG_SERVER_IP, WG_ENDPOINT, WG_PORT, WG_DNS,
 )
 from routes.auth import login_required
+
+# Match the regex enforced by routes/peers.py — backup-import must apply the
+# same constraints as the create form, otherwise an attacker-supplied JSON
+# could land peers with names that bypass shell/log safety assumptions.
+_NAME_RE = re.compile(r'^[a-zA-Z0-9_\-]{1,64}$')
+# WireGuard public/preshared keys are 32 bytes base64-encoded → 44 chars ending
+# with '='. Reject anything that doesn't match so we never pass garbage to wg(8).
+_WG_KEY_RE = re.compile(r'^[A-Za-z0-9+/]{43}=$')
 
 settings_bp = Blueprint('settings', __name__)
 
@@ -213,7 +223,11 @@ def backup_export():
     safe_peers = []
     for p in peers:
         pc = dict(p)
-        pc.pop('private_key', None)   # never export peer private keys
+        # Never export peer private keys or pre-shared keys — backups are
+        # often emailed/synced to less-trusted storage. Imported peers must
+        # have keys regenerated.
+        pc.pop('private_key', None)
+        pc.pop('preshared_key', None)
         safe_peers.append(pc)
     data = {
         'traverse_version': '1.0',
@@ -256,36 +270,63 @@ def backup_import():
     from database import get_all_peers, create_peer, update_peer_expiry, update_peer_notes
     from wireguard import add_peer_to_interface
 
+    try:
+        wg_net = ipaddress.ip_network(WG_SUBNET, strict=False)
+    except ValueError:
+        wg_net = None
+
     existing_keys = {p['public_key'] for p in get_all_peers()}
     imported = skipped = 0
     errors = []
 
     for p in data.get('peers', []):
-        pub = p.get('public_key', '').strip()
-        if not pub:
+        pub  = (p.get('public_key') or '').strip()
+        name = (p.get('name') or '').strip()
+        ip   = (p.get('vpn_ip') or '').strip()
+        psk  = (p.get('preshared_key') or '').strip()
+        if not (pub and name and ip):
             skipped += 1
             continue
         if pub in existing_keys:
             skipped += 1
             continue
-        if not p.get('vpn_ip') or not p.get('name'):
+        if not _NAME_RE.match(name):
+            errors.append(f'{name}: invalid name')
+            skipped += 1
+            continue
+        if not _WG_KEY_RE.match(pub):
+            errors.append(f'{name}: invalid public key')
+            skipped += 1
+            continue
+        if psk and not _WG_KEY_RE.match(psk):
+            errors.append(f'{name}: invalid preshared key')
+            skipped += 1
+            continue
+        try:
+            ip_obj = ipaddress.ip_address(ip)
+        except ValueError:
+            errors.append(f'{name}: invalid vpn_ip')
+            skipped += 1
+            continue
+        if wg_net is not None and ip_obj not in wg_net:
+            errors.append(f'{name}: vpn_ip outside {WG_SUBNET}')
             skipped += 1
             continue
         try:
             peer_id = create_peer(
-                name          = p['name'],
+                name          = name,
                 private_key   = '',   # excluded from backup; user must regenerate config
                 public_key    = pub,
-                preshared_key = p.get('preshared_key', ''),
-                vpn_ip        = p['vpn_ip'],
+                preshared_key = psk,
+                vpn_ip        = ip,
                 dns           = p.get('dns', WG_DNS),
                 endpoint      = p.get('endpoint', WG_ENDPOINT),
                 allowed_ips   = p.get('allowed_ips', '0.0.0.0/0'),
             )
             existing_keys.add(pub)
-            if p.get('preshared_key') and p.get('vpn_ip'):
+            if psk:
                 try:
-                    add_peer_to_interface(pub, p['preshared_key'], p['vpn_ip'])
+                    add_peer_to_interface(pub, psk, ip)
                 except Exception:
                     pass
             if p.get('expires_at'):
@@ -294,7 +335,7 @@ def backup_import():
                 update_peer_notes(peer_id, p.get('notes', ''), p.get('device', 'other'))
             imported += 1
         except Exception as e:
-            errors.append(f"{p.get('name', 'unknown')}: {e}")
+            errors.append(f"{name or 'unknown'}: {e}")
 
     parts = [f'Imported {imported} peer(s)']
     if skipped:

@@ -904,6 +904,11 @@ function doPing() {
       return { label: 'CACHED',  color: 'var(--info)' };
     return { label: s, color: 'var(--text-muted)' };
   }
+  // Domain comes from upstream DNS (Pi-hole); escape before insertion so a
+  // malicious DNS lookup from a peer can't smuggle HTML/JS into this page.
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"'`]/g, c => (
+    { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;', '`':'&#96;' }[c]
+  ));
 
   function load() {
     if (btn) { btn.disabled = true; btn.textContent = '…'; }
@@ -926,10 +931,10 @@ function doPing() {
           const { label, color } = statusLabel(q.status);
           const t = new Date(q.time * 1000).toLocaleTimeString([], {hour12:false, hour:'2-digit', minute:'2-digit', second:'2-digit'});
           html += `<tr>
-            <td class="td-mono text-dim" style="font-size:0.78rem;">${t}</td>
-            <td style="font-family:var(--mono); font-size:0.82rem; max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${q.domain}</td>
-            <td><span style="font-family:var(--mono); font-size:0.75rem; color:${color}; font-weight:600;">${label}</span></td>
-            <td class="td-mono text-dim" style="font-size:0.75rem;">${q.type || 'A'}</td>
+            <td class="td-mono text-dim" style="font-size:0.78rem;">${esc(t)}</td>
+            <td style="font-family:var(--mono); font-size:0.82rem; max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(q.domain)}</td>
+            <td><span style="font-family:var(--mono); font-size:0.75rem; color:${color}; font-weight:600;">${esc(label)}</span></td>
+            <td class="td-mono text-dim" style="font-size:0.75rem;">${esc(q.type || 'A')}</td>
           </tr>`;
         });
         html += '</tbody></table></div>';

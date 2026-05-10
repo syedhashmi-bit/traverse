@@ -1,5 +1,6 @@
 import os
-from flask import Flask, render_template
+from datetime import timedelta
+from flask import Flask, render_template, request
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -7,7 +8,23 @@ load_dotenv()
 
 def create_app():
     app = Flask(__name__)
-    app.secret_key = os.getenv('SECRET_KEY', 'changeme-set-in-dotenv')
+
+    # Fail fast if SECRET_KEY isn't set — a hardcoded fallback would let
+    # anyone forge session cookies and bypass auth entirely.
+    secret = os.getenv('SECRET_KEY')
+    if not secret or secret == 'changeme-use-a-strong-random-secret':
+        raise RuntimeError(
+            'SECRET_KEY is required (set a strong random value in .env). '
+            'Generate one with: python -c "import secrets; print(secrets.token_hex(32))"'
+        )
+    app.secret_key = secret
+
+    app.config.update(
+        SESSION_COOKIE_SECURE=True,
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE='Strict',
+        PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
+    )
 
     from cache_ext import cache
     cache.init_app(app)
@@ -97,6 +114,62 @@ def create_app():
             'app_pihole_enabled':      bool(os.getenv('PIHOLE_ENABLED')),
             'notifications_active':    notif_active,
         }
+
+    @app.before_request
+    def csrf_origin_check():
+        # Defence-in-depth on top of SameSite=Strict cookies: reject any
+        # state-changing request whose Origin/Referer doesn't match this host.
+        # Prevents XSS-driven cross-site fetches and old-browser CSRF.
+        if request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
+            host = request.host
+            origin  = request.headers.get('Origin', '')
+            referer = request.headers.get('Referer', '')
+            ok = False
+            for src in (origin, referer):
+                if not src:
+                    continue
+                try:
+                    from urllib.parse import urlparse
+                    netloc = urlparse(src).netloc
+                except Exception:
+                    netloc = ''
+                if netloc == host:
+                    ok = True
+                    break
+            # Allow when neither header is present only if same-origin can't
+            # be determined (some legacy clients) — SameSite=Strict still
+            # blocks the cross-site case in modern browsers.
+            if origin or referer:
+                if not ok:
+                    return ('Forbidden: cross-origin request blocked', 403)
+
+    @app.after_request
+    def set_security_headers(resp):
+        resp.headers.setdefault('X-Frame-Options', 'DENY')
+        resp.headers.setdefault('X-Content-Type-Options', 'nosniff')
+        resp.headers.setdefault('Referrer-Policy', 'no-referrer')
+        resp.headers.setdefault(
+            'Strict-Transport-Security',
+            'max-age=31536000; includeSubDomains',
+        )
+        resp.headers.setdefault(
+            'Content-Security-Policy',
+            "default-src 'self'; "
+            "img-src 'self' data: blob:; "
+            "style-src 'self' 'unsafe-inline'; "
+            "script-src 'self' 'unsafe-inline'; "
+            "connect-src 'self'; "
+            "frame-ancestors 'none'; "
+            "base-uri 'self'; "
+            "form-action 'self'",
+        )
+        # Don't let browsers/proxies cache authenticated HTML — peer detail
+        # pages render private keys, and shared devices could leak them.
+        if not request.path.startswith('/static/'):
+            resp.headers.setdefault(
+                'Cache-Control', 'no-store, no-cache, must-revalidate'
+            )
+        return resp
 
     @app.errorhandler(404)
     def not_found(e):

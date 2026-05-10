@@ -172,22 +172,43 @@ def is_peer_active(last_handshake_ts, threshold=300):
 
 # ── Config generation ─────────────────────────────────────────────────────────
 
+def _safe_conf_value(s, allowed_extra=''):
+    """Strip anything that could break out of a WireGuard config value into a
+    new section/key. Allows a-z A-Z 0-9 . : / , - = + plus characters in
+    `allowed_extra`. Anything else (including newlines, brackets, '#') is
+    dropped — this is the last line of defence behind form validation."""
+    if not s:
+        return ''
+    base = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.:/,-=+ '
+    allowed = set(base + allowed_extra)
+    return ''.join(c for c in s if c in allowed).strip()
+
+
 def generate_client_config(peer, server_public_key):
-    endpoint = peer.get('endpoint') or WG_ENDPOINT
-    # dns_override takes precedence over dns field, which falls back to WG_DNS
-    dns = peer.get('dns_override') or peer.get('dns') or WG_DNS
+    raw_endpoint = peer.get('endpoint') or WG_ENDPOINT
+    raw_dns      = peer.get('dns_override') or peer.get('dns') or WG_DNS
     tunnel_mode   = peer.get('tunnel_mode') or 'full'
-    custom_routes = peer.get('custom_routes') or ''
+    raw_custom    = peer.get('custom_routes') or ''
+    # Sanitize anything a user can influence so a crafted value can't smuggle
+    # extra [Interface]/[Peer] sections into the downloaded client config.
+    endpoint      = _safe_conf_value(raw_endpoint)
+    dns           = _safe_conf_value(raw_dns)
+    custom_routes = _safe_conf_value(raw_custom)
     allowed_ips   = _effective_allowed_ips(peer['vpn_ip'], tunnel_mode, custom_routes)
+    # Keys are validated upstream (regex in routes/settings.py + wg-generated
+    # in routes/peers.py); still strip whitespace/newlines defensively.
+    priv = (peer['private_key'] or '').strip()
+    psk  = (peer['preshared_key'] or '').strip()
+    spk  = (server_public_key or '').strip()
     return (
         f"[Interface]\n"
-        f"PrivateKey = {peer['private_key']}\n"
+        f"PrivateKey = {priv}\n"
         f"Address = {peer['vpn_ip']}/32\n"
         f"DNS = {dns}\n"
         f"\n"
         f"[Peer]\n"
-        f"PublicKey = {server_public_key}\n"
-        f"PresharedKey = {peer['preshared_key']}\n"
+        f"PublicKey = {spk}\n"
+        f"PresharedKey = {psk}\n"
         f"Endpoint = {endpoint}:{WG_PORT}\n"
         f"AllowedIPs = {allowed_ips}\n"
         f"PersistentKeepalive = 25\n"

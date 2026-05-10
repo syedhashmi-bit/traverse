@@ -231,7 +231,9 @@
       <button id="sound-toggle" class="btn btn-ghost btn-sm" title="Sound alerts">🔕</button>
       <button id="help-toggle" class="btn btn-ghost btn-sm" title="Help">?</button>
       <button id="theme-toggle" class="btn btn-ghost btn-sm theme-toggle-btn" title="Toggle theme">☾</button>
-      <a href="{{ url_for('auth.logout') }}" class="btn btn-ghost btn-sm">Sign Out</a>
+      <form action="{{ url_for('auth.logout') }}" method="post" style="display:inline; margin:0;">
+        <button type="submit" class="btn btn-ghost btn-sm">Sign Out</button>
+      </form>
     </div>
   </header>
 

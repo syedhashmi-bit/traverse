@@ -1,7 +1,9 @@
+import ipaddress
 import re
 import subprocess
 import threading
 import time
+import urllib.parse as _uparse
 import urllib.request as _ureq
 import urllib.error as _uerr
 import json as _json
@@ -417,12 +419,18 @@ def pihole_peer_queries(vpn_ip):
     import os
     if not os.getenv('PIHOLE_ENABLED'):
         return jsonify({'ok': False, 'reason': 'pihole disabled'})
+    # Validate vpn_ip is a real IPv4 address before splicing into the URL,
+    # otherwise a logged-in caller could inject extra Pi-hole API parameters.
+    try:
+        ipaddress.IPv4Address(vpn_ip)
+    except (ValueError, ipaddress.AddressValueError):
+        return jsonify({'ok': False, 'reason': 'invalid vpn_ip'})
     sid = _pihole_auth()
     if not sid:
         return jsonify({'ok': False, 'reason': 'auth failed'})
     try:
         req = _ureq.Request(
-            'http://10.8.0.1:8080/api/queries?client=' + vpn_ip + '&length=100',
+            'http://10.8.0.1:8080/api/queries?client=' + _uparse.quote(vpn_ip, safe='') + '&length=100',
             headers={'X-FTL-SID': sid},
         )
         with _ureq.urlopen(req, timeout=4) as resp:

@@ -6,6 +6,7 @@ Every send is wrapped in try/except — a failed channel never crashes the app.
 """
 import json
 import os
+import re
 import smtplib
 import ssl
 import threading
@@ -13,6 +14,17 @@ import urllib.parse
 import urllib.request
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+
+
+# Telegram bot token format: <bot_id>:<35-char alphanumeric+_-> — keep this strict
+# so a malicious token can't smuggle URL components (e.g. "x@evil.com/y") into the
+# api.telegram.org request and pivot the host via userinfo or path injection.
+_TELEGRAM_TOKEN_RE = re.compile(r'^\d{6,12}:[A-Za-z0-9_-]{30,80}$')
+
+# Only accept official Discord webhook hosts so user-supplied webhook URLs can't
+# be turned into an SSRF gadget against internal services.
+_DISCORD_WEBHOOK_HOSTS = ('discord.com', 'discordapp.com', 'canary.discord.com',
+                          'ptb.discord.com')
 
 
 # ── Channel senders ──────────────────────────────────────────────────────────
@@ -67,6 +79,8 @@ def send_telegram(config, message):
     chat_id = (config.get('chat_id') or '').strip()
     if not (token and chat_id):
         raise ValueError('telegram: token and chat_id are required')
+    if not _TELEGRAM_TOKEN_RE.match(token):
+        raise ValueError('telegram: token format is invalid')
 
     data = urllib.parse.urlencode({
         'chat_id':    chat_id,
@@ -91,6 +105,12 @@ def send_discord(config, message, severity='info'):
     url = (config.get('webhook') or '').strip()
     if not url:
         raise ValueError('discord: webhook url is required')
+
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme != 'https' or parsed.hostname not in _DISCORD_WEBHOOK_HOSTS:
+        raise ValueError('discord: webhook must be an https URL on a discord.com host')
+    if not parsed.path.startswith('/api/webhooks/'):
+        raise ValueError('discord: webhook path must start with /api/webhooks/')
 
     color_map = {'info': 0x3b82f6, 'warning': 0xf59e0b, 'critical': 0xef4444}
     payload = {

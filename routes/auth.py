@@ -2,19 +2,58 @@ import base64
 import hmac
 import io
 import os
+import threading
+import time
 from functools import wraps
 
 import pyotp
 import qrcode
 from flask import (
     Blueprint, render_template, request, redirect,
-    url_for, session,
+    url_for, session, abort,
 )
 from dotenv import load_dotenv
 
 load_dotenv()
 
 auth_bp = Blueprint('auth', __name__)
+
+
+# ── Brute-force throttle ──────────────────────────────────────────────────────
+# In-memory per-IP failure counter with sliding window. Survives single-process
+# restarts only — fine for a 2-worker gunicorn admin tool with one operator.
+# Locks the bucket per IP to keep increments correct under concurrency.
+_FAIL_LIMIT  = 5            # consecutive failures before lockout kicks in
+_FAIL_WINDOW = 15 * 60      # window over which failures count (seconds)
+_LOCK_BACKOFF = 60          # base lockout in seconds; doubles per extra fail
+_fail_lock = threading.Lock()
+_fail_state = {}            # ip -> {'fails': [ts, ...], 'locked_until': ts}
+
+
+def _record_failure(ip):
+    now = time.time()
+    with _fail_lock:
+        s = _fail_state.setdefault(ip, {'fails': [], 'locked_until': 0.0})
+        s['fails'] = [t for t in s['fails'] if now - t < _FAIL_WINDOW]
+        s['fails'].append(now)
+        if len(s['fails']) >= _FAIL_LIMIT:
+            extra = len(s['fails']) - _FAIL_LIMIT
+            s['locked_until'] = now + _LOCK_BACKOFF * (2 ** extra)
+
+
+def _record_success(ip):
+    with _fail_lock:
+        _fail_state.pop(ip, None)
+
+
+def _seconds_locked(ip):
+    now = time.time()
+    with _fail_lock:
+        s = _fail_state.get(ip)
+        if not s:
+            return 0
+        remaining = int(s['locked_until'] - now)
+        return remaining if remaining > 0 else 0
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -81,8 +120,18 @@ def login():
         return redirect(url_for('dashboard.index'))
 
     error = None
+    ip = _client_ip()
 
     if request.method == 'POST':
+        locked = _seconds_locked(ip)
+        if locked:
+            error = f'Too many failed attempts. Try again in {locked}s.'
+            return render_template(
+                'login.html',
+                error    = error,
+                next_url = request.args.get('next', ''),
+            ), 429
+
         username = request.form.get('username', '')
         password = request.form.get('password', '')
 
@@ -100,20 +149,22 @@ def login():
         )
 
         if user_match and pass_match:
-            session.permanent = False
-            session.clear()
             next_url = _safe_next(
                 request.form.get('next') or request.args.get('next')
             )
+            session.clear()
+            session.permanent = True
             if _get_totp() is None:
                 # No TOTP secret configured — skip 2FA
                 session['logged_in'] = True
+                _record_success(ip)
                 _notify_login_success()
                 return redirect(next_url)
             session['totp_pending'] = True
             session['totp_next'] = next_url
             return redirect(url_for('auth.verify_totp'))
 
+        _record_failure(ip)
         _notify_login_failed(username)
         error = 'Invalid credentials.'
 
@@ -134,8 +185,14 @@ def verify_totp():
         return redirect(url_for('dashboard.index'))
 
     error = None
+    ip = _client_ip()
 
     if request.method == 'POST':
+        locked = _seconds_locked(ip)
+        if locked:
+            error = f'Too many failed attempts. Try again in {locked}s.'
+            return render_template('totp_verify.html', error=error), 429
+
         code = request.form.get('code', '').strip().replace(' ', '')
         totp = _get_totp()
         # valid_window=1 accepts one step before/after for clock skew
@@ -143,8 +200,11 @@ def verify_totp():
             next_url = session.pop('totp_next', '/')
             session['totp_pending'] = False
             session['logged_in'] = True
+            session.permanent = True
+            _record_success(ip)
             _notify_login_success()
             return redirect(_safe_next(next_url))
+        _record_failure(ip)
         _notify_login_failed('totp')
         error = 'Invalid code. Try again.'
 
@@ -155,11 +215,15 @@ def verify_totp():
 
 @auth_bp.route('/totp-setup')
 def totp_setup():
-    # Accessible right after password check (totp_pending) or when already in
-    if not session.get('logged_in') and not session.get('totp_pending'):
+    # Only fully authenticated admins can view the TOTP secret/QR. The
+    # earlier `totp_pending` gate let anyone with just the password fetch
+    # the seed and forever bypass 2FA.
+    if not session.get('logged_in'):
         return redirect(url_for('auth.login'))
 
     secret = os.getenv('TOTP_SECRET', '')
+    if not secret:
+        abort(404)
     totp   = pyotp.TOTP(secret)
     uri    = totp.provisioning_uri(name='admin', issuer_name='Traverse VPN')
 
@@ -173,7 +237,7 @@ def totp_setup():
 
 # ── Logout ────────────────────────────────────────────────────────────────────
 
-@auth_bp.route('/logout')
+@auth_bp.route('/logout', methods=['POST'])
 def logout():
     session.clear()
     return redirect(url_for('auth.login'))

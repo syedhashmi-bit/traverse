@@ -1,3 +1,4 @@
+import ipaddress
 import json
 import socket
 import ssl
@@ -30,6 +31,15 @@ def _extract_ip(endpoint):
 
 def _geolocate_ip(ip):
     """Call ipapi.co for geo data. Returns dict with lat/lon/city/country/country_code or None."""
+    # Validate ip is a real public IP before splicing it into the URL — avoids
+    # any chance of path/query injection and skips unroutable addresses that
+    # ipapi can't resolve anyway.
+    try:
+        addr = ipaddress.ip_address(ip)
+    except (ValueError, TypeError):
+        return None
+    if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_multicast:
+        return None
     try:
         ctx = ssl.create_default_context()
         url = f'https://ipapi.co/{ip}/json/'
