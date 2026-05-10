@@ -118,30 +118,43 @@ def create_app():
     @app.before_request
     def csrf_origin_check():
         # Defence-in-depth on top of SameSite=Strict cookies: reject any
-        # state-changing request whose Origin/Referer doesn't match this host.
-        # Prevents XSS-driven cross-site fetches and old-browser CSRF.
-        if request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
-            host = request.host
-            origin  = request.headers.get('Origin', '')
-            referer = request.headers.get('Referer', '')
-            ok = False
-            for src in (origin, referer):
-                if not src:
-                    continue
-                try:
-                    from urllib.parse import urlparse
-                    netloc = urlparse(src).netloc
-                except Exception:
-                    netloc = ''
-                if netloc == host:
-                    ok = True
-                    break
-            # Allow when neither header is present only if same-origin can't
-            # be determined (some legacy clients) — SameSite=Strict still
-            # blocks the cross-site case in modern browsers.
-            if origin or referer:
-                if not ok:
-                    return ('Forbidden: cross-origin request blocked', 403)
+        # state-changing request whose Origin/Referer hostname doesn't
+        # match this host. Compare hostnames only (ignore port) so default
+        # ports and proxy hops don't trigger false positives.
+        if request.method not in ('POST', 'PUT', 'PATCH', 'DELETE'):
+            return
+        from urllib.parse import urlparse
+
+        # Build the set of hostnames we consider "us". request.host honors
+        # X-Forwarded-Host when ProxyFix is enabled; otherwise it's the
+        # value nginx forwarded as Host. SERVER_NAME is the configured
+        # canonical host (if set).
+        def _host_only(value: str) -> str:
+            return (value or '').split(':', 1)[0].lower()
+
+        allowed = {_host_only(request.host)}
+        for h in (request.headers.get('X-Forwarded-Host', ''),
+                  os.getenv('SERVER_NAME', '')):
+            if h:
+                allowed.add(_host_only(h))
+        allowed.discard('')
+
+        origin  = request.headers.get('Origin', '')
+        referer = request.headers.get('Referer', '')
+        if not (origin or referer):
+            # No Origin/Referer at all — SameSite=Strict still blocks the
+            # cross-site case in modern browsers, so allow.
+            return
+        for src in (origin, referer):
+            if not src:
+                continue
+            try:
+                hostname = (urlparse(src).hostname or '').lower()
+            except Exception:
+                hostname = ''
+            if hostname and hostname in allowed:
+                return
+        return ('Forbidden: cross-origin request blocked', 403)
 
     @app.after_request
     def set_security_headers(resp):
