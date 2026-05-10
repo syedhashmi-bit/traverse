@@ -247,8 +247,27 @@ def _dispatch(event_type, message, severity):
                 pass
 
 
+_SECRET_PATTERNS = (
+    # SMTP/IMAP auth lines often echo "password=...", "auth ... LOGIN <b64>", etc.
+    re.compile(r'(?i)(password|passwd|pwd|secret|token|api[_-]?key|authorization)\s*[:=]\s*\S+'),
+    re.compile(r'(?i)\bbearer\s+[a-z0-9._\-]+', ),
+    # Telegram bot tokens (digits:35+ chars) — keep redaction stricter than the
+    # accept regex so partial matches still get scrubbed in error text.
+    re.compile(r'\b\d{6,12}:[A-Za-z0-9_-]{20,80}\b'),
+    # Discord webhook IDs/tokens that may appear in error bodies.
+    re.compile(r'/api/webhooks/\d+/[A-Za-z0-9_-]+'),
+)
+
+
+def _redact(s):
+    for pat in _SECRET_PATTERNS:
+        s = pat.sub('[REDACTED]', s)
+    return s
+
+
 def _short_err(e):
     s = str(e) or e.__class__.__name__
+    s = _redact(s)
     return s if len(s) < 300 else s[:297] + '...'
 
 

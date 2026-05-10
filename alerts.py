@@ -1,4 +1,5 @@
 import os
+import re
 import ssl
 import time
 import threading
@@ -52,10 +53,17 @@ def _pihole_alive():
         return False
 
 
+_LEGACY_TG_TOKEN_RE = re.compile(r'^\d{6,12}:[A-Za-z0-9_-]{30,80}$')
+
+
 def _send(msg):
     token   = os.getenv('TELEGRAM_BOT_TOKEN', '').strip()
     chat_id = os.getenv('TELEGRAM_CHAT_ID', '').strip()
     if not token or not chat_id:
+        return
+    # Refuse a malformed token instead of splicing it into api.telegram.org —
+    # an attacker who edits .env shouldn't be able to redirect the request.
+    if not _LEGACY_TG_TOKEN_RE.match(token):
         return
     data = urllib.parse.urlencode({
         'chat_id': chat_id, 'text': msg, 'parse_mode': 'HTML',

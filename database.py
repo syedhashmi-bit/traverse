@@ -1,9 +1,17 @@
+import re
 import sqlite3
 import os
 from contextlib import contextmanager
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+# SQLite has no parameter binding for identifiers/types in ALTER TABLE, so the
+# migrate loop below interpolates literal strings. These regexes are a tripwire
+# in case anyone wires runtime data into that loop in the future.
+_IDENT_RE     = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]{0,63}$')
+_COLDEF_RE    = re.compile(r"^[A-Za-z0-9_'\s.()-]{1,128}$")
 
 _DB_PATH = None
 
@@ -78,6 +86,11 @@ def migrate_db():
             ('custom_routes',          "TEXT NOT NULL DEFAULT ''"),
             ('dns_override',           "TEXT NOT NULL DEFAULT ''"),
         ]:
+            # Defence-in-depth: this loop only ever holds source-code literals,
+            # but enforce a strict shape so a future contributor who mistakenly
+            # threads user input here gets a hard failure instead of injection.
+            if not _IDENT_RE.match(col) or not _COLDEF_RE.match(definition):
+                raise ValueError(f'unsafe migrate entry: {col!r}, {definition!r}')
             try:
                 conn.execute(f"ALTER TABLE peers ADD COLUMN {col} {definition}")
             except Exception:

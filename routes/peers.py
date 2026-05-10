@@ -384,13 +384,18 @@ def download_config(peer_id):
     server_pub  = get_server_public_key()
     config_text = generate_client_config(peer, server_pub or '(server-key-unavailable)')
     buf = io.BytesIO(config_text.encode('utf-8'))
-    safe_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', peer['name'])
-    return send_file(
+    safe_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', peer['name']) or 'peer'
+    resp = send_file(
         buf,
         mimetype='text/plain',
         as_attachment=True,
         download_name=f'{safe_name}.conf',
     )
+    # Config contains the peer private key — never let it sit in a proxy or
+    # browser cache. Override Flask's send_file default max-age explicitly.
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, private'
+    resp.headers['Pragma']        = 'no-cache'
+    return resp
 
 
 # ── QR code page ──────────────────────────────────────────────────────────────
@@ -416,7 +421,11 @@ def qr_image(peer_id):
     buf = io.BytesIO()
     img.save(buf, format='PNG')
     buf.seek(0)
-    return send_file(buf, mimetype='image/png')
+    resp = send_file(buf, mimetype='image/png')
+    # The QR encodes the peer private key — same caching rules as the .conf.
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, private'
+    resp.headers['Pragma']        = 'no-cache'
+    return resp
 
 
 # ── Edit notes / device ──────────────────────────────────────────────────────
