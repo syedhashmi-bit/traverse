@@ -1,5 +1,5 @@
 <p align="center">
-  <img width="200" height="200" alt="app" src="https://github.com/user-attachments/assets/26d75f18-7a2e-4c23-be28-4ff3207a8e08" />
+  <img width="200" height="200" alt="Traverse" src="static/img/app.png" />
 </p>
 
 ### Traverse
