@@ -81,6 +81,21 @@
   const C_INACTIVE = '#5a6278';
   const C_DISABLED = '#ef4444';
   const C_TUNNEL   = { full: '#10b981', vpn_only: '#22d3ee', split: '#fbbf24' };
+  // Text colours pulled from CSS vars so the canvas labels are readable
+  // in both dark and light themes. Re-resolved on `traverse:themechange`
+  // so a toggle redraws with the right values.
+  let C_LABEL = '#e2e8f0';
+  let C_DIM   = '#64748b';
+  function refreshTextColors() {
+    const cs = getComputedStyle(document.body);
+    C_LABEL = (cs.getPropertyValue('--text').trim()     || '#e2e8f0');
+    C_DIM   = (cs.getPropertyValue('--text-dim').trim() || '#64748b');
+  }
+  refreshTextColors();
+  window.addEventListener('traverse:themechange', () => {
+    refreshTextColors();
+    drawFrame();
+  });
   function peerColor(n) {
     if (!n.enabled) return C_DISABLED;
     if (!n.active)  return C_INACTIVE;
@@ -192,7 +207,7 @@
     // Endpoint hostname — 16px below the server circle
     ctx.font         = '400 10px "JetBrains Mono", "Fira Code", "Courier New", monospace';
     ctx.textBaseline = 'top';
-    ctx.fillStyle    = '#94a3b8';
+    ctx.fillStyle    = C_DIM;
     const ep = endpoint.length > 18 ? endpoint.slice(0, 18) + '…' : endpoint;
     ctx.fillText(ep, cx, cy + sR + 16);
 
@@ -238,7 +253,7 @@
       // Peer name — 16px below the bottom of the node circle
       const nameStr    = n.name.length > 12 ? n.name.slice(0, 12) + '…' : n.name;
       ctx.font         = '600 13px "Inter", "Segoe UI", system-ui, sans-serif';
-      ctx.fillStyle    = '#e2e8f0';
+      ctx.fillStyle    = C_LABEL;
       ctx.textAlign    = 'center';
       ctx.textBaseline = 'top';
       ctx.globalAlpha  = n.enabled ? 1 : 0.5;
@@ -247,7 +262,7 @@
 
       // VPN IP — 14px below the peer name
       ctx.font      = '400 11px "JetBrains Mono", "Fira Code", "Courier New", monospace';
-      ctx.fillStyle = '#64748b';
+      ctx.fillStyle = C_DIM;
       const ipY = nameY + 13 + 14;
       ctx.fillText(n.vpn_ip, n._x, ipY);
 

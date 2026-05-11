@@ -8,6 +8,13 @@
     document.body.classList.toggle('theme-dark',  theme !== 'light');
     const btn = document.getElementById('theme-toggle');
     if (btn) btn.textContent = theme === 'light' ? '☀' : '☾';
+    // Tell canvas-drawing code (charts, topology) to re-read CSS vars
+    // and redraw. Avoids forcing a full page reload on toggle.
+    try {
+      window.dispatchEvent(new CustomEvent('traverse:themechange', {
+        detail: { theme },
+      }));
+    } catch (_) { /* IE / very old browsers */ }
   }
   const saved = localStorage.getItem(STORAGE_KEY) || 'dark';
   applyTheme(saved);
@@ -23,6 +30,49 @@
     }
   });
 })();
+
+// ── Chart palette (shared across dashboard + peer detail) ──────────────────
+// Chart.js needs concrete colour values, not CSS variable references. This
+// helper resolves the current theme's vars at call time so charts can either
+// pick them up at construction or re-read them when the theme toggles.
+window._tvPalette = function () {
+  const cs = getComputedStyle(document.body);
+  const isLight = document.body.classList.contains('theme-light');
+  return {
+    textDim:       (cs.getPropertyValue('--text-dim').trim()    || '#5a6278'),
+    textMuted:     (cs.getPropertyValue('--text-muted').trim()  || '#8892a4'),
+    gridLine:      isLight ? 'rgba(15,23,42,0.05)' : 'rgba(255,255,255,0.04)',
+    borderLine:    isLight ? 'rgba(15,23,42,0.04)' : 'rgba(255,255,255,0.03)',
+    tooltipBg:     (cs.getPropertyValue('--surface').trim()     || '#141724'),
+    tooltipFg:     (cs.getPropertyValue('--text').trim()        || '#e2e8f0'),
+    tooltipBorder: (cs.getPropertyValue('--border').trim()      || '#2a2f4a'),
+  };
+};
+window._tvCharts = window._tvCharts || [];
+
+window.addEventListener('traverse:themechange', () => {
+  if (typeof Chart === 'undefined') return;
+  const p = window._tvPalette();
+  Chart.defaults.color       = p.textMuted;
+  Chart.defaults.borderColor = p.borderLine;
+  (window._tvCharts || []).forEach(ch => {
+    if (ch.options.plugins && ch.options.plugins.tooltip) {
+      const tt = ch.options.plugins.tooltip;
+      tt.backgroundColor = p.tooltipBg;
+      tt.titleColor      = p.tooltipFg;
+      tt.bodyColor       = p.tooltipFg;
+      tt.borderColor     = p.tooltipBorder;
+    }
+    if (ch.options.scales) {
+      ['x', 'y'].forEach(k => {
+        const sc = ch.options.scales[k];
+        if (sc && sc.grid)  sc.grid.color = p.gridLine;
+        if (sc && sc.title && sc.title.color) sc.title.color = p.textDim;
+      });
+    }
+    ch.update('none');
+  });
+});
 
 // Copy-to-clipboard
 function copyText(text, btn) {

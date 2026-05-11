@@ -3237,3 +3237,55 @@ body.theme-light .last-seen.seen-today  { color: var(--text-muted); }
 body.theme-light .last-seen.seen-week,
 body.theme-light .last-seen.seen-old    { color: var(--text-dim); }
 body.theme-light .last-seen.seen-never  { color: var(--text-dim); }
+
+/* ── Light theme — v3 surface coverage (Telegram-unify refactor pass) ── */
+/* These rules cover the last few dark-only colours that were hardcoded
+   in early CSS and were missed by the v2 light-theme pass:
+
+   1. `.install-banner.ios-tip` was a literal dark gradient.
+   2. `.topology-grid-bg` dots were `rgba(255,255,255,0.04)` — invisible
+      on a light background. Switch to a dark-on-light dot.
+   3. The toggle-switch thumb was `#e2e8f0` (light grey) which all but
+      vanishes on a light slider track. Light theme gets a white thumb
+      and a stronger shadow ring instead. */
+
+body.theme-light .install-banner {
+  background: linear-gradient(135deg, var(--surface), var(--surface-2));
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.10);
+}
+body.theme-light .install-banner.ios-tip {
+  background: linear-gradient(135deg, #ffffff, #f0f2f8);
+}
+
+body.theme-light .topology-grid-bg {
+  background-image: radial-gradient(circle, rgba(15,23,42,0.07) 1px, transparent 1px);
+}
+
+body.theme-light .toggle-switch .slider::before {
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18);
+}
+body.theme-light .toggle-switch input:checked + .slider::before {
+  background: #ffffff;
+}
+
+/* Code blocks in peer detail / config pages */
+body.theme-light .code-block,
+body.theme-light .code-wrap {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+/* Danger-zone card has a hardcoded subtle red tint — keep the accent
+   but lift the surface so the warning text isn't on a near-black panel. */
+body.theme-light .danger-zone {
+  background: rgba(239, 68, 68, 0.04);
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+/* Modal backdrops keep a dark dim (intentional, both themes) but the
+   surface inside should follow the theme. The Regenerate / Rotate-PSK
+   confirm modals use inline `var(--surface)` already — nothing to do
+   there. */
+

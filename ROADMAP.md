@@ -8,11 +8,10 @@ ready, not on a calendar.
 
 ## Near-term polish
 
-- **Finish the light theme.** Toggle works but some surfaces (panels,
-  charts, certain table backgrounds) stay dark. Audit `static/css/style.css`
-  for hard-coded `#xxx` colours that should be CSS variables, then add the
-  light-theme overrides at the end of the file (per the project's
-  append-only CSS rule).
+(The near-term polish queue from earlier in this roadmap — MAX_PEERS env,
+dead-CSS removal, Telegram path unification, light-theme finish — has
+been cleared as of this pass. New near-term items belong here as they
+come up.)
 
 ## Reliability & quality
 

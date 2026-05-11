@@ -353,8 +353,12 @@
   }
 
   /* ── Chart ───────────────────────────────────────────────── */
-  Chart.defaults.color       = '#5a6278';
-  Chart.defaults.borderColor = 'rgba(255,255,255,0.03)';
+  // Palette + theme-change wiring live in app.js. Just read once at init
+  // and register the chart on window._tvCharts so the theme toggle picks
+  // it up automatically.
+  const _pal = window._tvPalette();
+  Chart.defaults.color       = _pal.textDim;
+  Chart.defaults.borderColor = _pal.borderLine;
   Chart.defaults.font.family = "'JetBrains Mono','Fira Code','Consolas',monospace";
   Chart.defaults.font.size   = 11;
 
@@ -391,17 +395,22 @@
       plugins: {
         legend: { display:false },
         tooltip: {
-          backgroundColor:'#141724', borderColor:'#2a2f4a', borderWidth:1, padding:8,
+          backgroundColor:_pal.tooltipBg,
+          titleColor:    _pal.tooltipFg,
+          bodyColor:     _pal.tooltipFg,
+          borderColor:   _pal.tooltipBorder,
+          borderWidth:1, padding:8,
           callbacks: { label: c => '  ' + fmtRate(c.parsed.y) },
         },
       },
       scales: {
-        x: { border:{ display:false }, grid:{ color:'rgba(255,255,255,0.05)' }, ticks:{ maxTicksLimit:16, maxRotation:0 } },
-        y: { border:{ display:false }, grid:{ color:'rgba(255,255,255,0.05)' }, min:0,
+        x: { border:{ display:false }, grid:{ color:_pal.gridLine }, ticks:{ maxTicksLimit:16, maxRotation:0 } },
+        y: { border:{ display:false }, grid:{ color:_pal.gridLine }, min:0,
              ticks:{ callback: v => fmtRate(v), maxTicksLimit:4 } },
       },
     },
   });
+  window._tvCharts.push(lineChart);
 
   /* ── Live indicator ──────────────────────────────────────── */
   const dot   = document.getElementById('live-dot');
