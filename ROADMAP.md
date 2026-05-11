@@ -32,9 +32,6 @@ ready, not on a calendar.
 - **Move 2FA enrolment into the UI.** Currently `TOTP_SECRET` is set in
   `.env` and `/totp-setup` only displays the QR. Add a real enrol/disable
   flow with backup codes and a fresh-login confirmation step.
-- **Preshared-key rotation.** No way to rotate a peer's PSK without
-  deleting and recreating. Add a "rotate" action that regenerates the PSK
-  in place, re-syncs `wg0`, and surfaces a new QR for the client.
 - **Audit log.** Append-only DB table of admin actions (peer create /
   delete / disable, settings changes, login events). Surfaced at
   `/history` or a new `/audit` page.

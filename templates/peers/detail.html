@@ -31,6 +31,10 @@
       ⚡ Kill
     </button>
     {% endif %}
+    <button type="button" class="btn btn-secondary" onclick="document.getElementById('rotate-psk-modal').style.display='flex'"
+            title="Replace just the preshared key — keypair stays the same">
+      🔑 Rotate PSK
+    </button>
     <button type="button" class="btn btn-secondary" onclick="document.getElementById('regen-modal').style.display='flex'">
       ↺ Regenerate Config
     </button>
@@ -517,6 +521,28 @@
       </form>
       <button type="button" class="btn btn-secondary"
               onclick="document.getElementById('regen-modal').style.display='none'">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Rotate PSK modal -->
+<div id="rotate-psk-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6);
+     z-index:500; align-items:center; justify-content:center; backdrop-filter:blur(3px);">
+  <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg);
+              padding:28px; max-width:440px; width:90%; margin:0 16px;">
+    <div style="font-size:1rem; font-weight:700; color:var(--text); margin-bottom:10px;">Rotate Preshared Key</div>
+    <div style="font-size:0.875rem; color:var(--text-muted); margin-bottom:20px; line-height:1.6;">
+      This replaces only the preshared key for <strong>{{ peer.name }}</strong> — the keypair
+      stays the same, so the peer's identity on the tunnel is unchanged.<br><br>
+      The existing config will <strong style="color:var(--warning);">stop connecting until
+      the new PSK is on the client</strong>. Download or re-scan the QR afterwards.
+    </div>
+    <div class="action-bar">
+      <form method="POST" action="{{ url_for('peers.rotate_psk', peer_id=peer.id) }}">
+        <button type="submit" class="btn btn-warning">Yes, rotate PSK</button>
+      </form>
+      <button type="button" class="btn btn-secondary"
+              onclick="document.getElementById('rotate-psk-modal').style.display='none'">Cancel</button>
     </div>
   </div>
 </div>

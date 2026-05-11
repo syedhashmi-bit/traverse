@@ -248,7 +248,8 @@ def migrate_db():
             'peer_connected', 'peer_disconnected', 'peer_inactive_long',
             'peer_expired', 'bw_anomaly', 'wg_down', 'wg_recovered',
             'pihole_down', 'pihole_recovered', 'peer_added', 'peer_deleted',
-            'peer_killed', 'config_regenerated', 'login_success', 'login_failed',
+            'peer_killed', 'config_regenerated', 'psk_rotated',
+            'login_success', 'login_failed',
         ):
             conn.execute(
                 "INSERT OR IGNORE INTO notification_event_toggles (event_type, enabled) VALUES (?, 1)",
@@ -444,6 +445,21 @@ def update_peer_keys(peer_id, private_key, public_key, preshared_key):
                    config_regenerated_at = ?, updated_at = ?
              WHERE id = ?
         """, (private_key, public_key, preshared_key, now, now, peer_id))
+
+
+def rotate_peer_psk(peer_id, new_psk):
+    """Replace just the preshared key. Keeps the keypair stable so the
+    client's identity doesn't change — only the PSK needs to be re-synced
+    on the device. Bumps config_regenerated_at so the peer-detail page
+    shows that the on-disk client config is now stale."""
+    from datetime import datetime
+    now = datetime.utcnow().isoformat()
+    with get_db() as conn:
+        conn.execute("""
+            UPDATE peers
+               SET preshared_key = ?, config_regenerated_at = ?, updated_at = ?
+             WHERE id = ?
+        """, (new_psk, now, now, peer_id))
 
 
 # ── Connection events ─────────────────────────────────────────────────────────

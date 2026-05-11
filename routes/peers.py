@@ -12,6 +12,7 @@ from database import (
     get_all_peers, get_peer_by_id, get_peer_by_name,
     create_peer, set_peer_enabled, delete_peer, count_peers,
     update_peer_notes, update_peer_expiry, update_peer_keys,
+    rotate_peer_psk,
     get_peer_connection_events, update_peer_pihole,
     get_peers_last_connect_ts,
     get_peer_locations, count_peer_locations,
@@ -19,7 +20,8 @@ from database import (
     get_port_forwards,
 )
 from wireguard import (
-    generate_keypair, get_next_vpn_ip, get_server_public_key,
+    generate_keypair, generate_preshared_key,
+    get_next_vpn_ip, get_server_public_key,
     add_peer_to_interface, remove_peer_from_interface,
     generate_client_config, format_bytes, format_handshake,
     is_peer_active, _effective_allowed_ips,
@@ -490,6 +492,58 @@ def regenerate(peer_id):
     except Exception:
         pass
     flash('Config regenerated. The old config will no longer work — download or scan the new one below.', 'success')
+    return redirect(url_for('peers.detail', peer_id=peer_id))
+
+
+# ── Rotate preshared key (PSK only) ──────────────────────────────────────────
+
+@peers_bp.route('/<int:peer_id>/rotate-psk', methods=['POST'])
+@login_required
+def rotate_psk(peer_id):
+    """Generate a fresh preshared key, persist it, and re-sync wg0.
+
+    The peer's keypair is left alone so its identity on the tunnel
+    doesn't change — only the symmetric PSK is replaced. The client
+    must download or scan the new config; the old one will fail
+    until they do.
+    """
+    peer = get_peer_by_id(peer_id)
+    if not peer:
+        abort(404)
+    try:
+        new_psk = generate_preshared_key()
+    except Exception as e:
+        flash(f'Preshared key generation failed: {e}', 'error')
+        return redirect(url_for('peers.detail', peer_id=peer_id))
+
+    rotate_peer_psk(peer_id, new_psk)
+
+    if peer.get('enabled'):
+        try:
+            # wg set <iface> peer <pub> preshared-key — applied by
+            # re-adding with the same pubkey + new psk.
+            add_peer_to_interface(
+                peer['public_key'], new_psk, peer['vpn_ip'],
+                peer.get('tunnel_mode') or 'full',
+                peer.get('custom_routes') or '',
+            )
+        except Exception as e:
+            flash(f'PSK rotated in DB but live wg0 sync failed: {e}', 'warning')
+
+    try:
+        from notifications import send_notification
+        send_notification(
+            'psk_rotated',
+            f'🔑 Preshared key rotated for *{peer["name"]}*',
+            severity='info',
+        )
+    except Exception:
+        pass
+    flash(
+        'Preshared key rotated. The old config will no longer connect — '
+        'download or scan the new one below and apply it to the client.',
+        'success',
+    )
     return redirect(url_for('peers.detail', peer_id=peer_id))
 
 
