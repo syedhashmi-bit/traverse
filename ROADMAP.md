@@ -21,14 +21,14 @@ ready, not on a calendar.
 
 ## Reliability & quality
 
-- **Add a minimal pytest suite.** No tests exist today. Start with:
-  - login / TOTP flow (success + failure)
-  - peer CRUD round-trip with a stubbed `wireguard.add_peer_to_interface`
-  - CSRF/origin check unit tests (regression for the `Origin: null` bug)
-  - backup export strips `private_key` / `preshared_key`
 - **GitHub Actions CI.** Run `python -m py_compile`, `pytest`, and the
   factory smoke test on every push. No deploy automation — production
   still uses `git pull && systemctl restart traverse`.
+- **Grow the pytest suite.** Initial pass covers auth, CSRF/origin
+  check, peer CRUD + cap, backup-export secret stripping, and
+  `MAX_PEERS` env-var handling (25 tests). Still missing: TOTP flow,
+  notifications dispatch, bulk-action endpoints, alerts poller logic
+  in isolation, port-forwards CRUD.
 - **Structured logging.** `alerts.py` swallows every exception silently
   (deliberate, to keep the poller alive). Route those swallowed errors to
   a rotating log file so failures aren't invisible.
