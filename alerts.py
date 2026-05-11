@@ -110,7 +110,16 @@ def _pihole_alive():
 _LEGACY_TG_TOKEN_RE = re.compile(r'^\d{6,12}:[A-Za-z0-9_-]{30,80}$')
 
 
-def _send(msg):
+def _legacy_telegram_fallback(html_msg):
+    """Best-effort Telegram send via the legacy env-var path.
+
+    Reserved for WG state-change notifications: if the DB is broken
+    or the notification settings table is empty, send_notification()
+    silently drops messages — and a missing WG-down alert is exactly
+    the kind of "you needed to know" event the legacy path exists for.
+    Everywhere else routes through send_notification() so users get
+    multi-channel delivery + per-event toggles.
+    """
     token   = os.getenv('TELEGRAM_BOT_TOKEN', '').strip()
     chat_id = os.getenv('TELEGRAM_CHAT_ID', '').strip()
     if not token or not chat_id:
@@ -120,7 +129,7 @@ def _send(msg):
     if not _LEGACY_TG_TOKEN_RE.match(token):
         return
     data = urllib.parse.urlencode({
-        'chat_id': chat_id, 'text': msg, 'parse_mode': 'HTML',
+        'chat_id': chat_id, 'text': html_msg, 'parse_mode': 'HTML',
     }).encode()
     ctx = ssl.create_default_context()
     req = urllib.request.Request(
@@ -129,7 +138,25 @@ def _send(msg):
     try:
         urllib.request.urlopen(req, context=ctx, timeout=10)
     except Exception:
-        pass
+        _log.exception('legacy telegram fallback failed')
+
+
+def _notify(event_type, message, severity='info', legacy_html=None):
+    """Single send-path for the poller.
+
+    Always tries send_notification() (multi-channel, DB-backed,
+    honours per-event toggles). For the two state-change events that
+    must never be silently lost (`wg_down`, `wg_recovered`), the
+    caller passes `legacy_html=...` and we additionally fire the
+    env-var Telegram path as belt-and-suspenders.
+    """
+    try:
+        from notifications import send_notification
+        send_notification(event_type, message, severity=severity)
+    except Exception:
+        _log.exception('send_notification(%r) failed', event_type)
+    if legacy_html is not None:
+        _legacy_telegram_fallback(legacy_html)
 
 
 def _check():
@@ -151,16 +178,12 @@ def _check():
         if not _wg_was_down or (now - _last_wg_alert) >= 300:
             _wg_was_down   = True
             _last_wg_alert = now
-            _send('🔴 <b>Traverse VPN</b>\n\nWireGuard (<code>wg0</code>) is <b>DOWN</b>.')
-            try:
-                from notifications import send_notification
-                send_notification(
-                    'wg_down',
-                    f'🚨 WireGuard ({WG_INTERFACE}) is DOWN on traverse server',
-                    severity='critical',
-                )
-            except Exception:
-                pass
+            _notify(
+                'wg_down',
+                f'🚨 WireGuard ({WG_INTERFACE}) is DOWN on traverse server',
+                severity='critical',
+                legacy_html='🔴 <b>Traverse VPN</b>\n\nWireGuard (<code>wg0</code>) is <b>DOWN</b>.',
+            )
         try:
             create_alert('wg_down', f'WireGuard {WG_INTERFACE} is not running', severity='critical')
         except Exception:
@@ -169,16 +192,12 @@ def _check():
         if _wg_was_down:
             _wg_was_down   = False
             _last_wg_alert = now
-            _send('🟢 <b>Traverse VPN</b>\n\nWireGuard is back <b>UP</b>.')
-            try:
-                from notifications import send_notification
-                send_notification(
-                    'wg_recovered',
-                    f'✅ WireGuard ({WG_INTERFACE}) is back UP',
-                    severity='info',
-                )
-            except Exception:
-                pass
+            _notify(
+                'wg_recovered',
+                f'✅ WireGuard ({WG_INTERFACE}) is back UP',
+                severity='info',
+                legacy_html='🟢 <b>Traverse VPN</b>\n\nWireGuard is back <b>UP</b>.',
+            )
 
     # ── Expire peers ───────────────────────────────────────────────────────
     with _swallow('expire_peers'):
@@ -432,7 +451,12 @@ def _check():
                 except Exception:
                     pass
 
-    # ── Peer inactivity alerts ─────────────────────────────────────────────
+    # ── Peer inactivity alerts (env-configurable threshold) ────────────────
+    # ALERT_INACTIVE_HOURS sets the per-peer inactivity threshold for the
+    # 'peer_inactive_hours' event (separate from the hard-coded 7-day
+    # 'peer_inactive_long' event handled above). Routes through the same
+    # send_notification path as the rest of the codebase, so it respects
+    # per-event toggles on /notifications and reaches every enabled channel.
     inactive_hours = float(os.getenv('ALERT_INACTIVE_HOURS', '0'))
     if inactive_hours <= 0:
         return
@@ -459,10 +483,10 @@ def _check():
             continue
         _peer_alerted_at[pub] = now
         hours_ago = int(age / 3600)
-        _send(
-            f'⚠️ <b>Traverse VPN</b>\n\n'
-            f'Peer <code>{peer["name"]}</code> ({peer["vpn_ip"]}) '
-            f'last seen <b>{hours_ago}h ago</b>.'
+        _notify(
+            'peer_inactive_hours',
+            f'⚠️ *{peer["name"]}* ({peer["vpn_ip"]}) last seen {hours_ago}h ago',
+            severity='warning',
         )
 
 

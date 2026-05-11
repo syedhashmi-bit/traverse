@@ -21,8 +21,10 @@ def poller(app, monkeypatch):
     a._inactive_notified = {}
     a._expired_notified  = set()
 
-    # Silence outbound side-effects.
-    monkeypatch.setattr(a, '_send', lambda msg: None)
+    # Silence outbound side-effects. After the Telegram-unification
+    # refactor, _send was renamed to _legacy_telegram_fallback and the
+    # poller now routes everything through _notify().
+    monkeypatch.setattr(a, '_legacy_telegram_fallback', lambda html: None)
     import notifications
     monkeypatch.setattr(notifications, 'send_notification',
                         lambda *args, **kw: None)

@@ -281,6 +281,7 @@ EVENT_LABELS = [
     ('peer_connected',     'Peer connected'),
     ('peer_disconnected',  'Peer disconnected'),
     ('peer_inactive_long', 'Peer inactive 7+ days'),
+    ('peer_inactive_hours', 'Peer inactive (ALERT_INACTIVE_HOURS threshold)'),
     ('peer_expired',       'Peer expired'),
     ('bw_anomaly',         'Traffic anomaly'),
     ('wg_down',            'WireGuard down'),

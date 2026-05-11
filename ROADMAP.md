@@ -13,11 +13,6 @@ ready, not on a calendar.
   for hard-coded `#xxx` colours that should be CSS variables, then add the
   light-theme overrides at the end of the file (per the project's
   append-only CSS rule).
-- **Unify the two Telegram code paths.** `alerts.py` `_send()` (legacy, env
-  vars) and `notifications.py` (DB-backed) both send to Telegram. The
-  legacy path is only retained for early-boot WG-down alerts; tighten the
-  fallback boundary so the rest of the codebase only uses
-  `send_notification()`.
 
 ## Reliability & quality
 

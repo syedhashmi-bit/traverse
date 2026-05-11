@@ -260,7 +260,8 @@ def migrate_db():
                 (_ch, _now),
             )
         for _evt in (
-            'peer_connected', 'peer_disconnected', 'peer_inactive_long',
+            'peer_connected', 'peer_disconnected',
+            'peer_inactive_long', 'peer_inactive_hours',
             'peer_expired', 'bw_anomaly', 'wg_down', 'wg_recovered',
             'pihole_down', 'pihole_recovered', 'peer_added', 'peer_deleted',
             'peer_killed', 'config_regenerated', 'psk_rotated',
