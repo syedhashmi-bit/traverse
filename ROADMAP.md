@@ -21,11 +21,12 @@ ready, not on a calendar.
 
 ## Reliability & quality
 
-- **Grow the pytest suite.** Initial pass (25 tests) covers auth,
-  CSRF/origin check, peer CRUD + cap, backup-export secret stripping,
-  and `MAX_PEERS` env-var handling. Still missing: TOTP flow,
-  notifications dispatch, bulk-action endpoints, alerts poller logic
-  in isolation, port-forwards CRUD.
+- **Continue growing the pytest suite.** 85 tests today across auth,
+  TOTP, CSRF, peers (CRUD + bulk + PSK rotation), notifications
+  dispatch, audit log, port-forwards, the alerts poller, backup
+  export, and `MAX_PEERS` handling. Still under-covered: the
+  bandwidth-anomaly maths inside the poller, the Pi-hole API
+  client, the wireguard CLI wrappers themselves.
 
 ## Security
 
