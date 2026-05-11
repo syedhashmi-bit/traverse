@@ -32,9 +32,6 @@ ready, not on a calendar.
 - **Move 2FA enrolment into the UI.** Currently `TOTP_SECRET` is set in
   `.env` and `/totp-setup` only displays the QR. Add a real enrol/disable
   flow with backup codes and a fresh-login confirmation step.
-- **Audit log.** Append-only DB table of admin actions (peer create /
-  delete / disable, settings changes, login events). Surfaced at
-  `/history` or a new `/audit` page.
 - **CSP tightening.** The current policy still allows `'unsafe-inline'`
   for scripts and styles. Move inline handlers to `static/js/app.js`,
   generate per-request nonces, and drop `'unsafe-inline'`.

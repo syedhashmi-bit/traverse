@@ -213,6 +213,19 @@ def migrate_db():
             )
         """)
 
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts          TEXT    NOT NULL,
+                action      TEXT    NOT NULL,
+                target_type TEXT,
+                target_id   INTEGER,
+                target_name TEXT,
+                actor_ip    TEXT,
+                details     TEXT
+            )
+        """)
+
         # ── Indexes (idempotent) ──────────────────────────────────────────
         for _idx_sql in (
             "CREATE INDEX IF NOT EXISTS idx_peers_enabled ON peers(enabled)",
@@ -229,6 +242,8 @@ def migrate_db():
             "CREATE INDEX IF NOT EXISTS idx_peer_locations_last_seen ON peer_locations(last_seen_at)",
             "CREATE INDEX IF NOT EXISTS idx_speedtest_tested_at ON speedtest_results(tested_at)",
             "CREATE INDEX IF NOT EXISTS idx_traffic_samples_peer_day ON traffic_samples(peer_id, day)",
+            "CREATE INDEX IF NOT EXISTS idx_audit_log_ts ON audit_log(ts)",
+            "CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action)",
         ):
             try:
                 conn.execute(_idx_sql)
@@ -920,3 +935,57 @@ def is_notification_event_enabled(event_type):
     if not row:
         return True  # default-on for unknown events
     return bool(row['enabled'])
+
+
+# ── Audit log ────────────────────────────────────────────────────────────────
+
+def audit(action, target_type=None, target_id=None, target_name=None,
+          actor_ip=None, details=None):
+    """Record an admin action. Best-effort: any failure is swallowed so a
+    DB hiccup never blocks the underlying operation."""
+    from datetime import datetime
+    try:
+        with get_db() as conn:
+            conn.execute("""
+                INSERT INTO audit_log
+                  (ts, action, target_type, target_id, target_name, actor_ip, details)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                datetime.utcnow().isoformat(),
+                action, target_type, target_id, target_name, actor_ip, details,
+            ))
+    except Exception:
+        pass
+
+
+def get_audit_log(limit=200, offset=0, action_prefix=None):
+    """Newest first. action_prefix filters by leading substring (e.g. 'peer.')."""
+    with get_db() as conn:
+        if action_prefix:
+            rows = conn.execute("""
+                SELECT id, ts, action, target_type, target_id, target_name,
+                       actor_ip, details
+                  FROM audit_log
+                 WHERE action LIKE ?
+              ORDER BY id DESC
+                 LIMIT ? OFFSET ?
+            """, (action_prefix + '%', limit, offset)).fetchall()
+        else:
+            rows = conn.execute("""
+                SELECT id, ts, action, target_type, target_id, target_name,
+                       actor_ip, details
+                  FROM audit_log
+              ORDER BY id DESC
+                 LIMIT ? OFFSET ?
+            """, (limit, offset)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def count_audit_log(action_prefix=None):
+    with get_db() as conn:
+        if action_prefix:
+            return conn.execute(
+                "SELECT COUNT(*) FROM audit_log WHERE action LIKE ?",
+                (action_prefix + '%',),
+            ).fetchone()[0]
+        return conn.execute("SELECT COUNT(*) FROM audit_log").fetchone()[0]

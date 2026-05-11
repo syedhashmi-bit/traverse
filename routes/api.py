@@ -221,6 +221,14 @@ def peer_kill(peer_id):
         )
     except Exception:
         pass
+    try:
+        from database import audit
+        xff = request.headers.get('X-Forwarded-For', '')
+        ip = xff.split(',')[0].strip() if xff else (request.remote_addr or 'unknown')
+        audit('peer.kill', target_type='peer', target_id=peer_id,
+              target_name=peer['name'], actor_ip=ip)
+    except Exception:
+        pass
     return jsonify({'ok': True, 'peer_name': peer['name'], 'peer_id': peer_id})
 
 

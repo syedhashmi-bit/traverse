@@ -17,7 +17,7 @@ from database import (
     get_peers_last_connect_ts,
     get_peer_locations, count_peer_locations,
     update_peer_tunnel, update_peer_dns_override,
-    get_port_forwards,
+    get_port_forwards, audit,
 )
 from wireguard import (
     generate_keypair, generate_preshared_key,
@@ -41,6 +41,13 @@ _DEVICES = {'phone', 'laptop', 'desktop', 'tablet', 'router', 'other'}
 
 def _safe_name(name):
     return bool(_NAME_RE.match(name))
+
+
+def _actor_ip():
+    xff = request.headers.get('X-Forwarded-For', '')
+    if xff:
+        return xff.split(',')[0].strip()
+    return request.remote_addr or 'unknown'
 
 
 # ── List ─────────────────────────────────────────────────────────────────────
@@ -172,6 +179,10 @@ def create():
         send_notification('peer_added', f'➕ New peer added: *{name}*', severity='info')
     except Exception:
         pass
+
+    audit('peer.create', target_type='peer', target_id=peer_id,
+          target_name=name, actor_ip=_actor_ip(),
+          details=f'tunnel={tunnel_mode} ip={vpn_ip}')
 
     flash(f'Peer "{name}" created at {vpn_ip}.', 'success')
     return redirect(url_for('peers.detail', peer_id=peer_id))
@@ -309,6 +320,10 @@ def api_create():
         send_notification('peer_added', f'➕ New peer added: *{name}*', severity='info')
     except Exception:
         pass
+
+    audit('peer.create', target_type='peer', target_id=peer_id,
+          target_name=name, actor_ip=_actor_ip(),
+          details=f'tunnel={tunnel_mode} ip={vpn_ip} via=wizard')
 
     return jsonify({'ok': True, 'peer_id': peer_id, 'redirect': url_for('peers.detail', peer_id=peer_id)})
 
@@ -491,6 +506,9 @@ def regenerate(peer_id):
                           severity='info')
     except Exception:
         pass
+    audit('peer.regenerate', target_type='peer', target_id=peer_id,
+          target_name=peer['name'], actor_ip=_actor_ip())
+
     flash('Config regenerated. The old config will no longer work — download or scan the new one below.', 'success')
     return redirect(url_for('peers.detail', peer_id=peer_id))
 
@@ -539,6 +557,10 @@ def rotate_psk(peer_id):
         )
     except Exception:
         pass
+
+    audit('peer.psk_rotate', target_type='peer', target_id=peer_id,
+          target_name=peer['name'], actor_ip=_actor_ip())
+
     flash(
         'Preshared key rotated. The old config will no longer connect — '
         'download or scan the new one below and apply it to the client.',
@@ -573,6 +595,10 @@ def toggle(peer_id):
     except Exception as e:
         flash(f'DB updated but WireGuard sync failed: {e}', 'warning')
 
+    audit('peer.enable' if new_state else 'peer.disable',
+          target_type='peer', target_id=peer_id,
+          target_name=peer['name'], actor_ip=_actor_ip())
+
     return redirect(url_for('peers.detail', peer_id=peer_id))
 
 
@@ -597,6 +623,8 @@ def delete(peer_id):
         send_notification('peer_deleted', f'🗑️ Peer deleted: *{peer_name}*', severity='info')
     except Exception:
         pass
+    audit('peer.delete', target_type='peer', target_id=peer_id,
+          target_name=peer_name, actor_ip=_actor_ip())
     flash(f'Peer "{peer_name}" deleted.', 'success')
     return redirect(url_for('peers.list_peers'))
 
@@ -627,6 +655,7 @@ def bulk_disable():
     if not ids:
         return jsonify({'ok': False, 'error': 'No peer ids provided.'}), 400
     n = 0
+    actor = _actor_ip()
     for pid in ids:
         peer = get_peer_by_id(pid)
         if not peer or not peer.get('enabled'):
@@ -636,6 +665,8 @@ def bulk_disable():
             remove_peer_from_interface(peer['public_key'])
         except Exception:
             pass
+        audit('peer.disable', target_type='peer', target_id=pid,
+              target_name=peer['name'], actor_ip=actor, details='via=bulk')
         n += 1
     return jsonify({'ok': True, 'count': n})
 
@@ -647,6 +678,7 @@ def bulk_enable():
     if not ids:
         return jsonify({'ok': False, 'error': 'No peer ids provided.'}), 400
     n = 0
+    actor = _actor_ip()
     for pid in ids:
         peer = get_peer_by_id(pid)
         if not peer or peer.get('enabled'):
@@ -660,6 +692,8 @@ def bulk_enable():
             )
         except Exception:
             pass
+        audit('peer.enable', target_type='peer', target_id=pid,
+              target_name=peer['name'], actor_ip=actor, details='via=bulk')
         n += 1
     return jsonify({'ok': True, 'count': n})
 
@@ -671,6 +705,7 @@ def bulk_delete():
     if not ids:
         return jsonify({'ok': False, 'error': 'No peer ids provided.'}), 400
     n = 0
+    actor = _actor_ip()
     for pid in ids:
         peer = get_peer_by_id(pid)
         if not peer:
@@ -679,12 +714,15 @@ def bulk_delete():
             remove_peer_from_interface(peer['public_key'])
         except Exception:
             pass
+        peer_name = peer['name']
         delete_peer(pid)
         try:
             from notifications import send_notification
-            send_notification('peer_deleted', f'🗑️ Peer deleted: *{peer["name"]}*', severity='info')
+            send_notification('peer_deleted', f'🗑️ Peer deleted: *{peer_name}*', severity='info')
         except Exception:
             pass
+        audit('peer.delete', target_type='peer', target_id=pid,
+              target_name=peer_name, actor_ip=actor, details='via=bulk')
         n += 1
     return jsonify({'ok': True, 'count': n})
 

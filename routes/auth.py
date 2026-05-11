@@ -159,6 +159,11 @@ def login():
                 session['logged_in'] = True
                 _record_success(ip)
                 _notify_login_success()
+                try:
+                    from database import audit
+                    audit('auth.login_success', actor_ip=ip)
+                except Exception:
+                    pass
                 return redirect(next_url)
             session['totp_pending'] = True
             session['totp_next'] = next_url
@@ -166,6 +171,12 @@ def login():
 
         _record_failure(ip)
         _notify_login_failed(username)
+        try:
+            from database import audit
+            audit('auth.login_failed', actor_ip=ip,
+                  details=f'username={username!r}' if username else None)
+        except Exception:
+            pass
         error = 'Invalid credentials.'
 
     return render_template(
@@ -203,9 +214,19 @@ def verify_totp():
             session.permanent = True
             _record_success(ip)
             _notify_login_success()
+            try:
+                from database import audit
+                audit('auth.login_success', actor_ip=ip, details='totp')
+            except Exception:
+                pass
             return redirect(_safe_next(next_url))
         _record_failure(ip)
         _notify_login_failed('totp')
+        try:
+            from database import audit
+            audit('auth.login_failed', actor_ip=ip, details='totp')
+        except Exception:
+            pass
         error = 'Invalid code. Try again.'
 
     return render_template('totp_verify.html', error=error)
@@ -239,5 +260,10 @@ def totp_setup():
 
 @auth_bp.route('/logout', methods=['POST'])
 def logout():
+    try:
+        from database import audit
+        audit('auth.logout', actor_ip=_client_ip())
+    except Exception:
+        pass
     session.clear()
     return redirect(url_for('auth.login'))

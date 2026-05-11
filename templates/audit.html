@@ -1,0 +1,105 @@
+{% extends 'base.html' %}
+{% block title %}Audit Log{% endblock %}
+{% block page_title %}Audit Log{% endblock %}
+
+{% block content %}
+<div class="section-header">
+  <div>
+    <div class="section-title">Audit Log</div>
+    <div class="section-sub">
+      Admin actions (peer CRUD, key rotation, logins). Newest first.
+      Total: {{ total }} entries.
+    </div>
+  </div>
+  {% if rows %}
+  <a href="{{ url_for('audit.export_csv', prefix=prefix) }}"
+     class="btn btn-secondary" title="Download as CSV">↓ CSV</a>
+  {% endif %}
+</div>
+
+<div class="filter-bar" style="margin-bottom:14px; display:flex; gap:8px; flex-wrap:wrap;">
+  {% set _filters = [('', 'All'), ('peer.', 'Peers'), ('auth.', 'Auth'),
+                     ('settings.', 'Settings')] %}
+  {% for val, label in _filters %}
+    <a href="{{ url_for('audit.index', prefix=val) }}"
+       class="filter-chip {% if prefix == val %}active{% endif %}"
+       style="padding:6px 14px; border-radius:20px; border:1px solid var(--border);
+              color:{% if prefix == val %}var(--accent){% else %}var(--text-muted){% endif %};
+              background:{% if prefix == val %}rgba(124,106,247,0.12){% else %}transparent{% endif %};
+              text-decoration:none; font-size:0.85rem;">
+      {{ label }}
+    </a>
+  {% endfor %}
+</div>
+
+{% if rows %}
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>When (UTC)</th>
+        <th>Action</th>
+        <th>Target</th>
+        <th>Actor IP</th>
+        <th>Details</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="text-sm text-muted">{{ r.ts[:19] }}</td>
+        <td>
+          <span class="badge
+            {% if r.action.startswith('auth.login_failed') %}badge-warning
+            {% elif r.action.startswith('auth.') %}badge-muted
+            {% elif r.action.startswith('peer.delete') or r.action.startswith('peer.kill') %}badge-danger
+            {% elif r.action.startswith('peer.') %}badge-success
+            {% else %}badge-muted{% endif %}">
+            {{ r.action }}
+          </span>
+        </td>
+        <td>
+          {% if r.target_type == 'peer' and r.target_id %}
+            <a href="{{ url_for('peers.detail', peer_id=r.target_id) }}"
+               style="color:var(--accent); text-decoration:none; font-weight:550;">
+              {{ r.target_name or '(deleted)' }}
+            </a>
+          {% else %}
+            <span class="text-dim">{{ r.target_name or '—' }}</span>
+          {% endif %}
+        </td>
+        <td class="td-mono text-sm">{{ r.actor_ip or '—' }}</td>
+        <td class="text-sm text-muted">{{ r.details or '' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if pages > 1 %}
+<div style="display:flex; gap:8px; justify-content:center; margin-top:18px; align-items:center;">
+  {% if page > 1 %}
+    <a href="{{ url_for('audit.index', prefix=prefix, page=page-1) }}"
+       class="btn btn-secondary btn-sm">← Prev</a>
+  {% endif %}
+  <span class="text-sm text-muted">Page {{ page }} / {{ pages }}</span>
+  {% if page < pages %}
+    <a href="{{ url_for('audit.index', prefix=prefix, page=page+1) }}"
+       class="btn btn-secondary btn-sm">Next →</a>
+  {% endif %}
+</div>
+{% endif %}
+
+{% else %}
+<div class="card">
+  <div class="empty-state-friendly">
+    <div class="empty-state-icon-lg">◷</div>
+    <div class="empty-state-heading">No audit entries yet</div>
+    <div class="empty-state-sub">
+      Admin actions will show up here as you create peers, rotate keys,
+      or log in.
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
