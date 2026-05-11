@@ -1,3 +1,5 @@
+import logging
+import logging.handlers
 import os
 import re
 import ssl
@@ -5,9 +7,61 @@ import time
 import threading
 import urllib.request
 import urllib.parse
+from contextlib import contextmanager
 
 
 _INTERVAL         = 60    # poll every 60 s
+
+
+# ── Logging ────────────────────────────────────────────────────────────────
+# The poller's outer loop deliberately swallows exceptions so a single bad
+# tick doesn't kill the daemon thread (per CLAUDE.md). The cost of that
+# robustness was that every failure was completely silent. This logger
+# captures the section name and traceback for any swallowed exception so
+# operators can actually see what's breaking. Falls back to stderr if no
+# writable log destination is available (e.g. dev / CI).
+_DEFAULT_LOG = '/var/log/traverse/poller.log'
+
+
+def _build_logger():
+    lg = logging.getLogger('traverse.poller')
+    if lg.handlers:
+        return lg
+    lg.setLevel(logging.INFO)
+
+    path = os.getenv('TRAVERSE_POLLER_LOG', _DEFAULT_LOG)
+    handler = None
+    try:
+        os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+        handler = logging.handlers.RotatingFileHandler(
+            path, maxBytes=512_000, backupCount=3,
+        )
+    except Exception:
+        handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter(
+        '%(asctime)s %(levelname)s [%(name)s] %(message)s',
+    ))
+    lg.addHandler(handler)
+    lg.propagate = False
+    return lg
+
+
+_log = _build_logger()
+
+
+@contextmanager
+def _swallow(section):
+    """Log any exception under a section label, then continue.
+
+    Replaces the silent `try: ... except Exception: pass` pattern in
+    the section guards inside _check(). Section-level granularity is
+    deliberate — individual notification-dispatch failures stay
+    silent to avoid log spam on every tick.
+    """
+    try:
+        yield
+    except Exception:
+        _log.exception('poller section %r failed', section)
 _wg_was_down      = False
 _last_wg_alert    = 0.0
 _peer_alerted_at  = {}    # public_key -> unix ts of last alert
@@ -127,7 +181,7 @@ def _check():
                 pass
 
     # ── Expire peers ───────────────────────────────────────────────────────
-    try:
+    with _swallow('expire_peers'):
         for p in disable_expired_peers():
             try:
                 remove_peer_from_interface(p['public_key'])
@@ -142,14 +196,12 @@ def _check():
                 )
             except Exception:
                 pass
-    except Exception:
-        pass
 
     live  = parse_wg_show()
     peers = get_all_peers()
 
     # ── Connection event tracking ──────────────────────────────────────────
-    try:
+    with _swallow('connection_events'):
         for peer in peers:
             pub     = peer['public_key']
             peer_id = peer['id']
@@ -187,11 +239,9 @@ def _check():
                         pass
             _peer_last_active[pub] = is_active
         trim_connection_events(1000)
-    except Exception:
-        pass
 
     # ── Endpoint location tracking ────────────────────────────────────────
-    try:
+    with _swallow('endpoint_location'):
         from database import record_peer_location
         # Lazy import to avoid circular dep with routes.map
         from routes.map import _geolocate_ip
@@ -221,11 +271,9 @@ def _check():
                 )
             else:
                 record_peer_location(peer_id, ip, endpoint_port=port)
-    except Exception:
-        pass
 
     # ── Bandwidth snapshots ────────────────────────────────────────────────
-    try:
+    with _swallow('bandwidth_snapshots'):
         for peer in peers:
             pub = peer['public_key']
             live_info = live.get(pub, {})
@@ -236,11 +284,9 @@ def _check():
             if tx is None:
                 tx = peer.get('tx_bytes') or 0
             record_bandwidth_snapshot(peer['id'], rx, tx)
-    except Exception:
-        pass
 
     # ── Bandwidth anomaly detection ───────────────────────────────────────
-    try:
+    with _swallow('bandwidth_anomaly'):
         from database import get_peer_bandwidth_snapshots, count_unseen_alerts
         import time as _t
         for peer in peers:
@@ -304,11 +350,9 @@ def _check():
                 except Exception:
                     pass
                 create_alert('bw_anomaly', msg, peer_id=peer['id'], severity='warning')
-    except Exception:
-        pass
 
     # ── Alert conditions ───────────────────────────────────────────────────
-    try:
+    with _swallow('alert_conditions'):
         today_str = datetime.utcnow().strftime('%Y-%m-%d')
         today_obj = date.today()
         seven_days = 7 * 86400
@@ -355,8 +399,6 @@ def _check():
                     'peer_expired', f'{peer["name"]} expired {label}',
                     peer_id=peer['id'], severity='info'
                 )
-    except Exception:
-        pass
 
     # ── Pi-hole up/down ────────────────────────────────────────────────────
     if os.getenv('PIHOLE_ENABLED', '').strip().lower() in ('1', 'true', 'yes', 'on'):
@@ -429,10 +471,11 @@ def _loop():
         try:
             _check()
         except Exception:
-            pass
+            _log.exception('poller tick crashed (loop continues)')
         time.sleep(_INTERVAL)
 
 
 def start_alerts():
     t = threading.Thread(target=_loop, daemon=True, name='traverse-alerts')
     t.start()
+    _log.info('alerts poller started (interval=%ds)', _INTERVAL)

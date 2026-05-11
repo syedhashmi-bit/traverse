@@ -26,9 +26,6 @@ ready, not on a calendar.
   and `MAX_PEERS` env-var handling. Still missing: TOTP flow,
   notifications dispatch, bulk-action endpoints, alerts poller logic
   in isolation, port-forwards CRUD.
-- **Structured logging.** `alerts.py` swallows every exception silently
-  (deliberate, to keep the poller alive). Route those swallowed errors to
-  a rotating log file so failures aren't invisible.
 
 ## Security
 
