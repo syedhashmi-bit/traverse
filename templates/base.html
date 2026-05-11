@@ -32,6 +32,32 @@
 </head>
 <body class="{% block body_class %}{% endblock %}">
 
+<!-- Chart-palette shim. app.js is loaded with `defer` further down so it
+     won't have executed by the time the content block's inline <script>
+     runs. Defining the helper here (non-deferred) guarantees that pages
+     calling window._tvPalette() at parse-time always find it. The
+     theme-change listener in app.js redirects through these globals. -->
+<script>
+  window._tvCharts = window._tvCharts || [];
+  window._tvPalette = window._tvPalette || function () {
+    var cs = getComputedStyle(document.body);
+    var isLight = document.body.classList.contains('theme-light');
+    function v(name, fallback) {
+      var x = (cs.getPropertyValue(name) || '').trim();
+      return x || fallback;
+    }
+    return {
+      textDim:       v('--text-dim',    '#5a6278'),
+      textMuted:     v('--text-muted',  '#8892a4'),
+      gridLine:      isLight ? 'rgba(15,23,42,0.05)' : 'rgba(255,255,255,0.04)',
+      borderLine:    isLight ? 'rgba(15,23,42,0.04)' : 'rgba(255,255,255,0.03)',
+      tooltipBg:     v('--surface',     '#141724'),
+      tooltipFg:     v('--text',        '#e2e8f0'),
+      tooltipBorder: v('--border',      '#2a2f4a'),
+    };
+  };
+</script>
+
 <!-- ── Top loading bar (fetch progress) ──────────────────────────────── -->
 <div id="tv-loading-bar" aria-hidden="true"></div>
 
@@ -57,7 +83,7 @@
 <aside class="sidebar">
   <a href="{{ url_for('dashboard.index') }}" class="sidebar-logo" data-tooltip="Traverse">
     <img src="{{ url_for('static', filename='img/app.png') }}" alt="T"
-         style="height:26px; width:26px; border-radius:5px; object-fit:cover;">
+         style="height:96px; width:96px; border-radius:16px; object-fit:cover;">
   </a>
 
   <nav class="sidebar-nav">

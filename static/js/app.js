@@ -31,25 +31,11 @@
   });
 })();
 
-// ── Chart palette (shared across dashboard + peer detail) ──────────────────
-// Chart.js needs concrete colour values, not CSS variable references. This
-// helper resolves the current theme's vars at call time so charts can either
-// pick them up at construction or re-read them when the theme toggles.
-window._tvPalette = function () {
-  const cs = getComputedStyle(document.body);
-  const isLight = document.body.classList.contains('theme-light');
-  return {
-    textDim:       (cs.getPropertyValue('--text-dim').trim()    || '#5a6278'),
-    textMuted:     (cs.getPropertyValue('--text-muted').trim()  || '#8892a4'),
-    gridLine:      isLight ? 'rgba(15,23,42,0.05)' : 'rgba(255,255,255,0.04)',
-    borderLine:    isLight ? 'rgba(15,23,42,0.04)' : 'rgba(255,255,255,0.03)',
-    tooltipBg:     (cs.getPropertyValue('--surface').trim()     || '#141724'),
-    tooltipFg:     (cs.getPropertyValue('--text').trim()        || '#e2e8f0'),
-    tooltipBorder: (cs.getPropertyValue('--border').trim()      || '#2a2f4a'),
-  };
-};
-window._tvCharts = window._tvCharts || [];
-
+// ── Chart palette listener ─────────────────────────────────────────────────
+// window._tvPalette / window._tvCharts are defined in base.html in a
+// non-deferred inline script so pages can call them at parse time
+// before this (deferred) module has loaded. We just react to theme
+// changes here and push the new colours into every registered chart.
 window.addEventListener('traverse:themechange', () => {
   if (typeof Chart === 'undefined') return;
   const p = window._tvPalette();
