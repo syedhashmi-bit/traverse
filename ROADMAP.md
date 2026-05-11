@@ -21,12 +21,9 @@ ready, not on a calendar.
 
 ## Reliability & quality
 
-- **GitHub Actions CI.** Run `python -m py_compile`, `pytest`, and the
-  factory smoke test on every push. No deploy automation — production
-  still uses `git pull && systemctl restart traverse`.
-- **Grow the pytest suite.** Initial pass covers auth, CSRF/origin
-  check, peer CRUD + cap, backup-export secret stripping, and
-  `MAX_PEERS` env-var handling (25 tests). Still missing: TOTP flow,
+- **Grow the pytest suite.** Initial pass (25 tests) covers auth,
+  CSRF/origin check, peer CRUD + cap, backup-export secret stripping,
+  and `MAX_PEERS` env-var handling. Still missing: TOTP flow,
   notifications dispatch, bulk-action endpoints, alerts poller logic
   in isolation, port-forwards CRUD.
 - **Structured logging.** `alerts.py` swallows every exception silently
