@@ -8,10 +8,9 @@ from wireguard import (
     get_interface_status, parse_wg_show,
     is_peer_active, format_bytes, format_handshake,
     format_handshake_short, WG_SUBNET, WG_ENDPOINT, WG_PORT,
+    MAX_PEERS,
 )
 from routes.auth import login_required
-
-MAX_PEERS = 20
 
 dashboard_bp = Blueprint('dashboard', __name__)
 

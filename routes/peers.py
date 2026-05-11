@@ -23,7 +23,7 @@ from wireguard import (
     add_peer_to_interface, remove_peer_from_interface,
     generate_client_config, format_bytes, format_handshake,
     is_peer_active, _effective_allowed_ips,
-    WG_ENDPOINT, WG_DNS, WG_PORT,
+    WG_ENDPOINT, WG_DNS, WG_PORT, MAX_PEERS,
 )
 from routes.auth import login_required
 
@@ -91,8 +91,6 @@ def list_peers():
 @peers_bp.route('/create', methods=['GET', 'POST'])
 @login_required
 def create():
-    MAX_PEERS = 20
-
     if request.method == 'GET':
         current_count = count_peers()
         try:
@@ -182,7 +180,6 @@ def create():
 @peers_bp.route('/wizard')
 @login_required
 def wizard():
-    MAX_PEERS = 20
     current_count = count_peers()
     try:
         next_ip = get_next_vpn_ip()
@@ -219,8 +216,8 @@ def api_preview():
         return jsonify({'error': 'Invalid peer name — 1–64 alphanumeric/dash/underscore chars.'}), 400
     if get_peer_by_name(name):
         return jsonify({'error': f'A peer named "{name}" already exists.'}), 409
-    if count_peers() >= 20:
-        return jsonify({'error': 'Peer limit reached (20 max).'}), 429
+    if count_peers() >= MAX_PEERS:
+        return jsonify({'error': f'Peer limit reached ({MAX_PEERS} max).'}), 429
 
     try:
         vpn_ip = get_next_vpn_ip()
@@ -285,8 +282,8 @@ def api_create():
         return jsonify({'error': 'Invalid peer name.'}), 400
     if get_peer_by_name(name):
         return jsonify({'error': f'Peer "{name}" already exists.'}), 409
-    if count_peers() >= 20:
-        return jsonify({'error': 'Peer limit reached.'}), 429
+    if count_peers() >= MAX_PEERS:
+        return jsonify({'error': f'Peer limit reached ({MAX_PEERS} max).'}), 429
     if device not in _DEVICES:
         device = 'other'
     if tunnel_mode not in ('full', 'vpn_only', 'split'):

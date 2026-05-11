@@ -13,11 +13,6 @@ ready, not on a calendar.
   for hard-coded `#xxx` colours that should be CSS variables, then add the
   light-theme overrides at the end of the file (per the project's
   append-only CSS rule).
-- **Make the peer cap configurable.** `MAX_PEERS = 20` is hardcoded in
-  three places in `routes/`. Move to env var (`MAX_PEERS`, default 20) and
-  raise the practical limit toward the stated 50-peer ceiling.
-- **Remove the duplicate `.num-flash` rule** in `style.css` — the earlier
-  definition is dead code.
 - **Unify the two Telegram code paths.** `alerts.py` `_send()` (legacy, env
   vars) and `notifications.py` (DB-backed) both send to Telegram. The
   legacy path is only retained for early-boot WG-down alerts; tighten the

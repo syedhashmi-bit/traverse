@@ -14,6 +14,15 @@ WG_ENDPOINT   = os.getenv('WG_ENDPOINT',     'your-server-ip')
 WG_PORT       = os.getenv('WG_PORT',         '51820')
 WG_DNS        = os.getenv('WG_DNS',          '1.1.1.1')
 
+# Peer cap. Honour MAX_PEERS env var (default 20), clamp to the project's
+# 50-peer hard ceiling. Any non-integer value falls back to the default.
+_MAX_PEERS_HARD_CAP = 50
+try:
+    _max_peers_env = int(os.getenv('MAX_PEERS', '20'))
+except (TypeError, ValueError):
+    _max_peers_env = 20
+MAX_PEERS = max(1, min(_max_peers_env, _MAX_PEERS_HARD_CAP))
+
 
 # ── Key generation ──────────────────────────────────────────────────────────
 
