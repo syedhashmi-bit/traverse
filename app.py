@@ -160,7 +160,11 @@ def create_app():
     def set_security_headers(resp):
         resp.headers.setdefault('X-Frame-Options', 'DENY')
         resp.headers.setdefault('X-Content-Type-Options', 'nosniff')
-        resp.headers.setdefault('Referrer-Policy', 'no-referrer')
+        # "same-origin" hides the Referer from cross-origin destinations
+        # but keeps Origin/Referer intact for our own form posts. The
+        # stricter "no-referrer" causes Chrome to send Origin: null on
+        # POSTs, which breaks the CSRF origin check below.
+        resp.headers.setdefault('Referrer-Policy', 'same-origin')
         resp.headers.setdefault(
             'Strict-Transport-Security',
             'max-age=31536000; includeSubDomains',
