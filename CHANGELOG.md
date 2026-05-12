@@ -1,5 +1,45 @@
 # Changelog
 
+## [1.9.0] — 2026-05-12 (Per-Peer Schedules)
+
+### Added
+- **Per-peer scheduled enable/disable** — each peer can have an "allowed window" (days + time-of-day in an IANA timezone). The poller flips the peer's `enabled` flag and the wg0 state every minute based on whether the current local time is inside or outside the window. Useful for time-of-day rules like a kid's laptop disabled after 22:00. Windows that cross midnight (e.g. `22:00–07:00`) are supported — the "previous day's window" continues to apply until the end-time the next morning.
+- **New "Schedule" card** on the peer detail page with day checkboxes, `<input type="time">` start/end pickers, an IANA timezone field backed by a `<datalist>` of common zones (UTC, Europe/Berlin, Europe/London, America/New_York, Asia/Karachi, Asia/Dubai, Asia/Singapore, Asia/Tokyo, Australia/Sydney, etc.), an "active" toggle (so you can pause a schedule without deleting it), and a confirm-modal removal.
+- **New routes**: `POST /peers/<id>/schedule` (upsert with validation) and `POST /peers/<id>/schedule/delete`. Both gated by `@login_required`, both write to the audit log (`peer.schedule_saved`, `peer.schedule_deleted`).
+- **New audit / notification events**: `peer.schedule_enabled` and `peer.schedule_disabled` rows when the poller flips state, plus a `peer_schedule_applied` notification fired on each transition. The event is seeded in `notification_event_toggles` so it shows up on `/notifications` automatically.
+
+### Implementation
+- **New top-level module `schedules.py`** — pure helpers (`parse_days`, `format_days`, `is_within_window`). Side-effect free; the same function the poller calls is what the tests exercise.
+- **New DB table `peer_schedules`** — `peer_id INTEGER PRIMARY KEY, days_of_week TEXT, enabled_from TEXT, enabled_to TEXT, timezone TEXT, enabled INTEGER, ...` with `ON DELETE CASCADE` so deleting a peer drops their schedule. Single row per peer; the PK enforces one-schedule-per-peer at the schema level.
+- **`alerts.py` poller section** — new `'schedules'` `_swallow` block. Only flips wg0/DB on transitions (avoids thrashing every tick). Timezone resolution via `zoneinfo.ZoneInfo`, falls back to UTC if the saved name doesn't resolve.
+
+### Tests
+- **`tests/test_schedules.py` — 35 cases**
+  - `parse_days` / `format_days`: csv/list/set inputs, garbage rejection, `'Weekdays'` / `'Weekends'` / `'Every day'` special-cases.
+  - `is_within_window`: same-day window inclusive/exclusive boundaries, wrong-day rejection, midnight-crossing with today / yesterday selected, neither-day case, equal-times → never-in-window, malformed input.
+  - DB helpers: upsert round-trip, replacement semantics, delete, CASCADE on peer delete, `get_all_peer_schedules` joining peer fields.
+  - Routes: login gate, persistence + audit, no-days rejection, garbage-time rejection, equal-times rejection, bogus-timezone rejection, delete + audit, paused-schedule flag persistence.
+  - Poller integration: out-of-window → wg0 remove + DB flip, in-window from disabled → wg0 add + DB flip, paused schedule leaves state alone (fails the test if remove/add is called).
+
+### Suite total
+**140 → 175 tests** (+35). Suite runs in ~14 s.
+
+### Files added
+```
+schedules.py
+tests/test_schedules.py
+```
+
+### Files modified
+```
+alerts.py, database.py
+routes/peers.py
+templates/peers/detail.html
+VERSION → 1.9.0
+```
+
+---
+
 ## [1.8.0] — 2026-05-12 (UI 2FA, CSP Tightening, Speedtest Sparkline, Coverage)
 
 ### Security

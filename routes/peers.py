@@ -18,6 +18,7 @@ from database import (
     get_peer_locations, count_peer_locations,
     update_peer_tunnel, update_peer_dns_override,
     get_port_forwards, audit,
+    get_peer_schedule, set_peer_schedule, delete_peer_schedule,
 )
 from wireguard import (
     generate_keypair, generate_preshared_key,
@@ -372,6 +373,12 @@ def detail(peer_id):
     effective_ips = _effective_allowed_ips(peer['vpn_ip'], tunnel_mode, custom_routes)
     port_fwds     = get_port_forwards(peer_id)
 
+    schedule = get_peer_schedule(peer_id)
+    if schedule:
+        from schedules import parse_days, format_days
+        schedule['day_set']  = parse_days(schedule['days_of_week'])
+        schedule['day_label'] = format_days(schedule['days_of_week'])
+
     return render_template(
         'peers/detail.html',
         peer            = peer,
@@ -384,6 +391,7 @@ def detail(peer_id):
         location_total  = location_total,
         effective_ips   = effective_ips,
         port_fwds       = port_fwds,
+        schedule        = schedule,
     )
 
 
@@ -567,6 +575,81 @@ def rotate_psk(peer_id):
         'success',
     )
     return redirect(url_for('peers.detail', peer_id=peer_id))
+
+
+# ── Per-peer schedule ─────────────────────────────────────────────────────────
+
+# Conservative input validation: HH:MM with leading zero, 0..23 / 0..59.
+_HM_RE = re.compile(r'^([01]\d|2[0-3]):([0-5]\d)$')
+# IANA tz names are restricted to a small character set; we just gate the
+# obvious junk before zoneinfo gets the string.
+_TZ_RE = re.compile(r'^[A-Za-z0-9_+\-/]{1,64}$')
+
+
+@peers_bp.route('/<int:peer_id>/schedule', methods=['POST'])
+@login_required
+def schedule_save(peer_id):
+    peer = get_peer_by_id(peer_id)
+    if not peer:
+        abort(404)
+
+    days_raw = request.form.getlist('days')
+    days = []
+    for d in days_raw:
+        try:
+            v = int(d)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= v <= 6:
+            days.append(v)
+    if not days:
+        flash('Pick at least one day for the schedule.', 'error')
+        return redirect(url_for('peers.detail', peer_id=peer_id) + '#schedule')
+
+    enabled_from = (request.form.get('enabled_from') or '').strip()
+    enabled_to   = (request.form.get('enabled_to')   or '').strip()
+    if not _HM_RE.match(enabled_from) or not _HM_RE.match(enabled_to):
+        flash('Times must look like HH:MM (24-hour).', 'error')
+        return redirect(url_for('peers.detail', peer_id=peer_id) + '#schedule')
+    if enabled_from == enabled_to:
+        flash('Start and end time can\'t be the same.', 'error')
+        return redirect(url_for('peers.detail', peer_id=peer_id) + '#schedule')
+
+    tz = (request.form.get('timezone') or 'UTC').strip() or 'UTC'
+    if not _TZ_RE.match(tz):
+        flash('Invalid timezone name.', 'error')
+        return redirect(url_for('peers.detail', peer_id=peer_id) + '#schedule')
+    # Round-trip through zoneinfo so a typo doesn't get persisted.
+    try:
+        from zoneinfo import ZoneInfo
+        ZoneInfo(tz)
+    except Exception:
+        flash(f'Unknown timezone: {tz}', 'error')
+        return redirect(url_for('peers.detail', peer_id=peer_id) + '#schedule')
+
+    is_enabled = bool(request.form.get('schedule_enabled'))
+    set_peer_schedule(peer_id, days, enabled_from, enabled_to,
+                      timezone=tz, enabled=is_enabled)
+    audit('peer.schedule_saved', target_type='peer', target_id=peer_id,
+          target_name=peer['name'], actor_ip=_actor_ip(),
+          details=f'{enabled_from}-{enabled_to} {tz} '
+                  f'days={",".join(str(d) for d in sorted(days))} '
+                  f'enabled={is_enabled}')
+    flash('Schedule saved.', 'success')
+    return redirect(url_for('peers.detail', peer_id=peer_id) + '#schedule')
+
+
+@peers_bp.route('/<int:peer_id>/schedule/delete', methods=['POST'])
+@login_required
+def schedule_delete(peer_id):
+    peer = get_peer_by_id(peer_id)
+    if not peer:
+        abort(404)
+    delete_peer_schedule(peer_id)
+    audit('peer.schedule_deleted', target_type='peer', target_id=peer_id,
+          target_name=peer['name'], actor_ip=_actor_ip())
+    flash('Schedule removed — peer state is back under manual control.', 'success')
+    return redirect(url_for('peers.detail', peer_id=peer_id) + '#schedule')
 
 
 # ── Toggle enable/disable ─────────────────────────────────────────────────────

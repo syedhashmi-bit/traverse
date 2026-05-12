@@ -315,6 +315,150 @@
       {% endif %}
     </div>
 
+    <!-- Schedule -->
+    <div class="card" id="schedule">
+      <div class="card-header">
+        <span class="card-title">Schedule</span>
+        {% if schedule and schedule.enabled %}
+          <span class="badge badge-success">● active</span>
+        {% elif schedule %}
+          <span class="badge badge-muted">○ paused</span>
+        {% else %}
+          <span class="badge badge-muted">none</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        {% if schedule %}
+        <p class="text-sm text-muted" style="line-height:1.6; margin-bottom:14px;">
+          Currently set to <strong>{{ schedule.day_label }}</strong>
+          from <strong class="mono">{{ schedule.enabled_from }}</strong>
+          to <strong class="mono">{{ schedule.enabled_to }}</strong>
+          ({{ schedule.timezone }}).
+          {% if schedule.enabled %}
+          The poller enables this peer inside the window and disables it
+          outside, every minute.
+          {% else %}
+          The schedule is paused — peer state is under manual control.
+          {% endif %}
+        </p>
+        {% else %}
+        <p class="text-sm text-muted" style="line-height:1.6; margin-bottom:14px;">
+          Set an allowed window and the poller will keep this peer enabled
+          inside it and disabled outside. Useful for time-of-day rules like
+          a kid's laptop off after 22:00.
+        </p>
+        {% endif %}
+
+        <form method="POST" action="{{ url_for('peers.schedule_save', peer_id=peer.id) }}"
+              autocomplete="off">
+
+          <div class="form-group" style="margin-bottom:14px;">
+            <label class="form-label">Days</label>
+            <div style="display:flex; flex-wrap:wrap; gap:8px;">
+              {% set _days = [(0,'Mon'), (1,'Tue'), (2,'Wed'), (3,'Thu'),
+                              (4,'Fri'), (5,'Sat'), (6,'Sun')] %}
+              {% for value, label in _days %}
+              <label style="display:inline-flex; align-items:center; gap:6px;
+                            padding:6px 12px; border:1px solid var(--border);
+                            border-radius: var(--radius); cursor:pointer;
+                            background:var(--surface-2); font-size:0.82rem;">
+                <input type="checkbox" name="days" value="{{ value }}"
+                       {% if schedule and value in schedule.day_set %}checked{% endif %}>
+                {{ label }}
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px;">
+            <div class="form-group" style="margin:0;">
+              <label class="form-label" for="enabled_from">Enabled from</label>
+              <input type="time" id="enabled_from" name="enabled_from"
+                     class="form-input mono" required
+                     value="{{ schedule.enabled_from if schedule else '07:00' }}">
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label class="form-label" for="enabled_to">Enabled to</label>
+              <input type="time" id="enabled_to" name="enabled_to"
+                     class="form-input mono" required
+                     value="{{ schedule.enabled_to if schedule else '22:00' }}">
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom:14px;">
+            <label class="form-label" for="timezone">Timezone</label>
+            <input type="text" id="timezone" name="timezone"
+                   class="form-input mono" list="tz-options" required
+                   value="{{ schedule.timezone if schedule else 'UTC' }}"
+                   placeholder="UTC">
+            <datalist id="tz-options">
+              <option value="UTC">
+              <option value="Europe/Berlin">
+              <option value="Europe/London">
+              <option value="Europe/Madrid">
+              <option value="America/New_York">
+              <option value="America/Chicago">
+              <option value="America/Los_Angeles">
+              <option value="Asia/Karachi">
+              <option value="Asia/Dubai">
+              <option value="Asia/Kolkata">
+              <option value="Asia/Singapore">
+              <option value="Asia/Tokyo">
+              <option value="Australia/Sydney">
+            </datalist>
+            <div class="text-xs text-muted" style="margin-top:6px;">
+              IANA name. Window "22:00 → 07:00" is fine — crosses midnight automatically.
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom:14px;">
+            <label style="display:inline-flex; align-items:center; gap:8px;">
+              <input type="checkbox" name="schedule_enabled" value="1"
+                     {% if (not schedule) or schedule.enabled %}checked{% endif %}>
+              <span class="text-sm">Schedule is active</span>
+            </label>
+          </div>
+
+          <div class="action-bar">
+            <button type="submit" class="btn btn-primary">
+              {{ 'Save schedule' if not schedule else 'Update schedule' }}
+            </button>
+            {% if schedule %}
+            <button type="button" class="btn btn-secondary" data-modal-open="schedule-delete-modal">
+              Remove schedule
+            </button>
+            {% endif %}
+          </div>
+        </form>
+      </div>
+    </div>
+
+    {% if schedule %}
+    <div id="schedule-delete-modal"
+         style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6);
+                z-index:500; align-items:center; justify-content:center; backdrop-filter:blur(3px);">
+      <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg);
+                  padding:28px; max-width:440px; width:90%; margin:0 16px;">
+        <div style="font-size:1rem; font-weight:700; color:var(--text); margin-bottom:10px;">
+          Remove schedule?
+        </div>
+        <div style="font-size:0.875rem; color:var(--text-muted); margin-bottom:20px; line-height:1.6;">
+          The schedule for <strong>{{ peer.name }}</strong> will be deleted.
+          The peer's current enabled/disabled state stays as it is — you can
+          toggle it manually afterwards.
+        </div>
+        <div class="action-bar">
+          <form method="POST" action="{{ url_for('peers.schedule_delete', peer_id=peer.id) }}">
+            <button type="submit" class="btn btn-danger">Yes, remove</button>
+          </form>
+          <button type="button" class="btn btn-secondary" data-modal-close="schedule-delete-modal">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
     <!-- Connection History -->
     <div class="card">
       <div class="card-header">

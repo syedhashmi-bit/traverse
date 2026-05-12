@@ -226,6 +226,26 @@ def migrate_db():
             )
         """)
 
+        # Per-peer schedule. One row per peer (PK on peer_id) — multi-window
+        # schedules can be modeled later by promoting to a regular AUTOINCREMENT
+        # PK with a peer_id FK. days_of_week is a comma-separated list of
+        # weekday() ints (Mon=0..Sun=6). Times are 'HH:MM' in `timezone`.
+        # When `enabled = 0`, the schedule exists but the poller leaves the
+        # peer's manual state alone.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS peer_schedules (
+                peer_id      INTEGER PRIMARY KEY,
+                days_of_week TEXT    NOT NULL,
+                enabled_from TEXT    NOT NULL,
+                enabled_to   TEXT    NOT NULL,
+                timezone     TEXT    NOT NULL DEFAULT 'UTC',
+                enabled      INTEGER NOT NULL DEFAULT 1,
+                created_at   TEXT    NOT NULL,
+                updated_at   TEXT    NOT NULL,
+                FOREIGN KEY (peer_id) REFERENCES peers(id) ON DELETE CASCADE
+            )
+        """)
+
         # DB-backed 2FA. Single-row table (id=1) so SET-style updates are
         # always safe and there's no path to multiple admin secrets coexisting.
         # backup_codes is a JSON list of sha256 hex digests; codes are
@@ -285,6 +305,7 @@ def migrate_db():
             'peer_killed', 'config_regenerated', 'psk_rotated',
             'login_success', 'login_failed',
             'totp_enrolled', 'totp_disabled', 'backup_code_used',
+            'peer_schedule_applied',
         ):
             conn.execute(
                 "INSERT OR IGNORE INTO notification_event_toggles (event_type, enabled) VALUES (?, 1)",
@@ -1092,6 +1113,66 @@ def consume_backup_code(code_hash):
              WHERE id = 1
         """, (_json.dumps(codes), datetime.utcnow().isoformat()))
         return True
+
+
+# ── Per-peer schedules ───────────────────────────────────────────────────────
+
+def get_peer_schedule(peer_id):
+    """Return the schedule row for `peer_id`, or None."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT peer_id, days_of_week, enabled_from, enabled_to, "
+            "       timezone, enabled, created_at, updated_at "
+            "  FROM peer_schedules WHERE peer_id = ?",
+            (peer_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def set_peer_schedule(peer_id, days_of_week, enabled_from, enabled_to,
+                      timezone='UTC', enabled=True):
+    """Upsert a peer's schedule. `days_of_week` is either a list/tuple of
+    ints (0=Mon..6=Sun) or a pre-formatted comma-separated string."""
+    from datetime import datetime
+    now = datetime.utcnow().isoformat()
+    if isinstance(days_of_week, (list, tuple, set)):
+        dow = ','.join(str(int(d)) for d in sorted({int(d) for d in days_of_week}))
+    else:
+        dow = str(days_of_week)
+    with get_db() as conn:
+        conn.execute("""
+            INSERT INTO peer_schedules
+              (peer_id, days_of_week, enabled_from, enabled_to,
+               timezone, enabled, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(peer_id) DO UPDATE SET
+                days_of_week = excluded.days_of_week,
+                enabled_from = excluded.enabled_from,
+                enabled_to   = excluded.enabled_to,
+                timezone     = excluded.timezone,
+                enabled      = excluded.enabled,
+                updated_at   = excluded.updated_at
+        """, (peer_id, dow, enabled_from, enabled_to,
+              timezone or 'UTC', 1 if enabled else 0, now, now))
+
+
+def delete_peer_schedule(peer_id):
+    with get_db() as conn:
+        conn.execute("DELETE FROM peer_schedules WHERE peer_id = ?", (peer_id,))
+
+
+def get_all_peer_schedules():
+    """Return all schedules with peer name + public_key joined for the poller."""
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT ps.peer_id, ps.days_of_week, ps.enabled_from, ps.enabled_to,
+                   ps.timezone, ps.enabled,
+                   p.name AS peer_name, p.public_key, p.preshared_key,
+                   p.vpn_ip, p.tunnel_mode, p.custom_routes, p.enabled AS peer_enabled
+              FROM peer_schedules ps
+              JOIN peers p ON p.id = ps.peer_id
+        """).fetchall()
+    return [dict(r) for r in rows]
 
 
 def replace_backup_codes(backup_code_hashes):

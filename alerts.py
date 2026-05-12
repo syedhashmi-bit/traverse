@@ -262,6 +262,75 @@ def _check():
             except Exception:
                 pass
 
+    # ── Apply per-peer schedules ──────────────────────────────────────────
+    # Each scheduled peer either should-be-enabled or should-be-disabled
+    # based on the current time in its own timezone. We flip wg0 + DB
+    # only on transitions to avoid thrashing.
+    with _swallow('schedules'):
+        from datetime import datetime as _dt
+        try:
+            from zoneinfo import ZoneInfo
+        except ImportError:
+            ZoneInfo = None  # python <3.9 — schedule feature falls back to UTC
+        from database import (
+            get_all_peer_schedules, set_peer_enabled, audit as _audit,
+        )
+        from wireguard import add_peer_to_interface as _add_peer
+        from schedules import is_within_window
+        for sch in get_all_peer_schedules():
+            if not sch.get('enabled'):
+                continue
+            tz_name = sch.get('timezone') or 'UTC'
+            tz = None
+            if ZoneInfo is not None:
+                try:
+                    tz = ZoneInfo(tz_name)
+                except Exception:
+                    tz = None
+            now_local = _dt.now(tz) if tz is not None else _dt.utcnow()
+            in_window = is_within_window(
+                now_local,
+                sch['days_of_week'],
+                sch['enabled_from'],
+                sch['enabled_to'],
+            )
+            desired = bool(in_window)
+            current = bool(sch.get('peer_enabled'))
+            if desired == current:
+                continue
+            set_peer_enabled(sch['peer_id'], desired)
+            try:
+                if desired:
+                    _add_peer(
+                        sch['public_key'], sch['preshared_key'], sch['vpn_ip'],
+                        sch.get('tunnel_mode') or 'full',
+                        sch.get('custom_routes') or '',
+                    )
+                else:
+                    remove_peer_from_interface(sch['public_key'])
+            except Exception:
+                _log.exception('schedule wg0 sync failed for peer %s', sch['peer_name'])
+            try:
+                _audit(
+                    'peer.schedule_' + ('enabled' if desired else 'disabled'),
+                    target_type='peer', target_id=sch['peer_id'],
+                    target_name=sch['peer_name'],
+                    actor_ip='scheduler',
+                )
+            except Exception:
+                pass
+            try:
+                from notifications import send_notification
+                send_notification(
+                    'peer_schedule_applied',
+                    (f'⏰ *{sch["peer_name"]}* '
+                     + ('enabled' if desired else 'disabled') +
+                     ' by schedule'),
+                    severity='info',
+                )
+            except Exception:
+                pass
+
     live  = parse_wg_show()
     peers = get_all_peers()
 
