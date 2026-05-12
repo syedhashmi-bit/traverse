@@ -196,7 +196,11 @@ def create_app():
         resp.headers.setdefault(
             'Content-Security-Policy',
             "default-src 'self'; "
-            "img-src 'self' data: blob:; "
+            # Map tiles come from CARTO's CDN (a-d.basemaps.cartocdn.com),
+            # attribution links to openstreetmap.org. Without these the
+            # Leaflet map renders grey tiles forever.
+            "img-src 'self' data: blob: https://*.basemaps.cartocdn.com "
+            "https://*.openstreetmap.org; "
             "style-src 'self' 'unsafe-inline'; "
             f"script-src 'self' 'nonce-{nonce}'; "
             "connect-src 'self'; "
