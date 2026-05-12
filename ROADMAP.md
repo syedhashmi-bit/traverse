@@ -12,12 +12,13 @@ Empty. New near-term items land here as they come up.
 
 ## Reliability & quality
 
-- **Pytest suite — 140 tests** across auth, TOTP (env + UI enrolment + backup
-  codes), CSRF, peers (CRUD + bulk + PSK rotation), notifications dispatch,
-  audit log, port-forwards, the alerts poller, the bandwidth-anomaly
-  heuristic, the Pi-hole v6 API client, the wireguard CLI wrappers,
-  backup export, and `MAX_PEERS` handling. Coverage gaps called out
-  earlier (anomaly maths, Pi-hole client, wg wrappers) are now closed.
+- **Pytest suite — 175 tests** across auth, TOTP (env + UI enrolment + backup
+  codes), CSRF, peers (CRUD + bulk + PSK rotation + per-peer schedules),
+  notifications dispatch, audit log, port-forwards, the alerts poller,
+  the bandwidth-anomaly heuristic, the Pi-hole v6 API client, the
+  wireguard CLI wrappers, backup export, and `MAX_PEERS` handling.
+  Coverage gaps called out earlier (anomaly maths, Pi-hole client, wg
+  wrappers) are now closed.
 
 ## Security
 
@@ -37,10 +38,12 @@ release bump.
   when exceeded; status surfaced on the peer list and detail pages.
 - **IPv6 on `wg0`.** Dual-stack tunnel with NAT66 (or routed `/64`) so
   clients get a v6 address through the VPS as well.
-- **Scheduled peer enable/disable.** Cron-style schedule per peer
-  (e.g. "kid's laptop: disabled 22:00–07:00").
 - **Mobile PWA polish pass.** Bottom nav is good; the wizard and the
   topology view still feel desktop-first.
+- **Schedule overview page.** v1.9.0 ships per-peer schedules edited on
+  the detail page; a dashboard-level `/schedules` index showing every
+  peer's window at a glance would be a natural next step if more than a
+  handful of peers end up scheduled.
 
 ## Explicit non-goals
 
