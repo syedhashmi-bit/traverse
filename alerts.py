@@ -141,6 +141,52 @@ def _legacy_telegram_fallback(html_msg):
         _log.exception('legacy telegram fallback failed')
 
 
+_BW_ANOMALY_MIN_RATE  = 1_048_576   # absolute floor — 1 MB/s before we flag
+_BW_ANOMALY_RATIO     = 5            # current must exceed avg × this
+
+
+def compute_bw_anomaly(snaps,
+                       min_rate=_BW_ANOMALY_MIN_RATE,
+                       ratio=_BW_ANOMALY_RATIO):
+    """Pure helper: given an ordered list of bandwidth snapshots, decide
+    whether the most-recent interval is anomalous compared to the prior ones.
+
+    Each `snap` is a dict with `recorded_at` (ISO string), `rx_bytes`, `tx_bytes`.
+    Returns (current_rate, avg_rate, is_anomaly).
+    - current_rate / avg_rate are bytes-per-second floats; both are 0.0 when
+      there isn't enough data to compute them.
+    - is_anomaly is True only when current > min_rate AND current > avg * ratio,
+      matching the heuristic the poller has used since 1.0.
+    """
+    from datetime import datetime as _dt
+    if not snaps or len(snaps) < 3:
+        return 0.0, 0.0, False
+    rates = []
+    for i in range(1, len(snaps)):
+        prev, curr = snaps[i - 1], snaps[i]
+        try:
+            t1 = _dt.fromisoformat(prev['recorded_at'])
+            t2 = _dt.fromisoformat(curr['recorded_at'])
+            secs = (t2 - t1).total_seconds()
+            if secs <= 0:
+                continue
+            total_bytes = max(0, (curr['rx_bytes'] - prev['rx_bytes']) +
+                                  (curr['tx_bytes'] - prev['tx_bytes']))
+            rates.append(total_bytes / secs)
+        except Exception:
+            continue
+    if len(rates) < 2:
+        return 0.0, 0.0, False
+    current_rate = rates[-1]
+    avg_rate     = sum(rates[:-1]) / len(rates[:-1])
+    is_anomaly = (
+        current_rate > min_rate and
+        avg_rate > 0 and
+        current_rate > avg_rate * ratio
+    )
+    return current_rate, avg_rate, is_anomaly
+
+
 def _notify(event_type, message, severity='info', legacy_html=None):
     """Single send-path for the poller.
 
@@ -306,34 +352,11 @@ def _check():
 
     # ── Bandwidth anomaly detection ───────────────────────────────────────
     with _swallow('bandwidth_anomaly'):
-        from database import get_peer_bandwidth_snapshots, count_unseen_alerts
-        import time as _t
+        from database import get_peer_bandwidth_snapshots
         for peer in peers:
             snaps = get_peer_bandwidth_snapshots(peer['id'], limit=12)
-            if len(snaps) < 3:
-                continue
-            # Compute per-interval rates (bytes/sec)
-            rates = []
-            for i in range(1, len(snaps)):
-                prev, curr = snaps[i - 1], snaps[i]
-                try:
-                    from datetime import datetime as _dt
-                    t1 = _dt.fromisoformat(prev['recorded_at'])
-                    t2 = _dt.fromisoformat(curr['recorded_at'])
-                    secs = (t2 - t1).total_seconds()
-                    if secs <= 0:
-                        continue
-                    total_bytes = max(0, (curr['rx_bytes'] - prev['rx_bytes']) +
-                                        (curr['tx_bytes'] - prev['tx_bytes']))
-                    rates.append(total_bytes / secs)
-                except Exception:
-                    continue
-            if len(rates) < 2:
-                continue
-            current_rate = rates[-1]
-            avg_rate     = sum(rates[:-1]) / len(rates[:-1])
-            _1MB = 1_048_576
-            if current_rate > _1MB and avg_rate > 0 and current_rate > avg_rate * 5:
+            current_rate, avg_rate, is_anomaly = compute_bw_anomaly(snaps)
+            if is_anomaly:
                 def _fmt(b):
                     if b < 1024: return f'{b:.0f} B/s'
                     if b < 1048576: return f'{b/1024:.1f} KB/s'

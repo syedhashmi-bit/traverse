@@ -8,33 +8,30 @@ ready, not on a calendar.
 
 ## Near-term polish
 
-(The near-term polish queue from earlier in this roadmap — MAX_PEERS env,
-dead-CSS removal, Telegram path unification, light-theme finish — has
-been cleared as of this pass. New near-term items belong here as they
-come up.)
+Empty. New near-term items land here as they come up.
 
 ## Reliability & quality
 
-- **Continue growing the pytest suite.** 85 tests today across auth,
-  TOTP, CSRF, peers (CRUD + bulk + PSK rotation), notifications
-  dispatch, audit log, port-forwards, the alerts poller, backup
-  export, and `MAX_PEERS` handling. Still under-covered: the
-  bandwidth-anomaly maths inside the poller, the Pi-hole API
-  client, the wireguard CLI wrappers themselves.
+- **Pytest suite — 140 tests** across auth, TOTP (env + UI enrolment + backup
+  codes), CSRF, peers (CRUD + bulk + PSK rotation), notifications dispatch,
+  audit log, port-forwards, the alerts poller, the bandwidth-anomaly
+  heuristic, the Pi-hole v6 API client, the wireguard CLI wrappers,
+  backup export, and `MAX_PEERS` handling. Coverage gaps called out
+  earlier (anomaly maths, Pi-hole client, wg wrappers) are now closed.
 
 ## Security
 
-- **Move 2FA enrolment into the UI.** Currently `TOTP_SECRET` is set in
-  `.env` and `/totp-setup` only displays the QR. Add a real enrol/disable
-  flow with backup codes and a fresh-login confirmation step.
-- **CSP tightening.** The current policy still allows `'unsafe-inline'`
-  for scripts and styles. Move inline handlers to `static/js/app.js`,
-  generate per-request nonces, and drop `'unsafe-inline'`.
+- **`script-src` nonce-only CSP shipped in 1.8.0.** The remaining
+  `'unsafe-inline'` on `style-src` is intentional — too many inline
+  `style="..."` attributes across admin views, and the XSS risk from
+  style is low relative to scripts. Revisit if/when the templates are
+  refactored to lose inline styling.
 
-## Features under consideration
+## Features under consideration (unscheduled)
 
 These are ideas, not commitments — happy to drop any if they bloat the
-scope.
+scope. Not assigned to a version because they're meatier than a single
+release bump.
 
 - **Per-peer bandwidth quotas.** Daily / monthly caps with auto-disable
   when exceeded; status surfaced on the peer list and detail pages.
@@ -42,9 +39,6 @@ scope.
   clients get a v6 address through the VPS as well.
 - **Scheduled peer enable/disable.** Cron-style schedule per peer
   (e.g. "kid's laptop: disabled 22:00–07:00").
-- **Server-side speedtest history graph.** The dashboard shows the latest
-  result; surface a sparkline of the last N runs on `/settings` instead of
-  the current table.
 - **Mobile PWA polish pass.** Bottom nav is good; the wizard and the
   topology view still feel desktop-first.
 

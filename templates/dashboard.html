@@ -321,7 +321,7 @@
 
 {% block extra_js %}
 <script src="{{ url_for('static', filename='js/chart.min.js') }}"></script>
-<script>
+<script nonce="{{ csp_nonce }}">
 (function () {
   const INTERVAL = 1000;
 

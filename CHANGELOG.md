@@ -1,5 +1,136 @@
 # Changelog
 
+## [1.8.0] — 2026-05-12 (UI 2FA, CSP Tightening, Speedtest Sparkline, Coverage)
+
+### Security
+- **2FA enrolment in the UI** — `/settings/security` now hosts a real enrol / disable / regenerate-codes flow. New routes blueprint (`routes/security.py`) drives a three-step enrolment: visit `/settings/security/totp/enroll` (fresh secret stashed in session) → confirm the 6-digit code → land on the one-shot backup-codes page. 10 single-use backup codes are generated per enrol, stored only as sha256 hex digests, and consumable at `/login/verify` in place of a TOTP code (alphanumeric input branches to the backup-code path; 6-digit numeric branches to TOTP). Disable + regenerate gate on a password re-prompt so a session left open can't lose 2FA without the password.
+- **Legacy `TOTP_SECRET` env path is preserved** — `_get_totp_secret()` consults the DB first, falls back to env, so existing setups keep working until the operator migrates via the new "Migrate to UI 2FA" prompt in `/settings`.
+- **New events**: `totp_enrolled`, `totp_disabled`, `backup_code_used` (seeded in `notification_event_toggles`, fired through the normal `send_notification` path).
+- **CSP tightening — drop `'unsafe-inline'` from `script-src`**. Every request now gets a fresh `g.csp_nonce = secrets.token_urlsafe(18)`; the CSP header is rebuilt with `script-src 'self' 'nonce-{nonce}'`, and every inline `<script>` block in the template tree (~20 across 14 files) now carries `nonce="{{ csp_nonce }}"`. Naked `<script>` tags can no longer execute — an XSS payload that smuggles JS into the page is denied by the browser instead of running with admin privileges. `style-src` keeps `'unsafe-inline'` because inline `style="..."` attributes are pervasive in the admin views and the XSS risk from style is much lower.
+- **Inline event handlers eliminated** — `onclick="..."`, `onchange="..."`, `onsubmit="..."` were the last bit blocking the nonce-only CSP. ~20 handlers across `peers/detail.html`, `port_forwards/index.html`, `settings.html`, and `offline.html` are converted to `data-modal-open` / `data-modal-close` / `data-copy-target` / `data-copy-text` / `data-toggle-password` / `data-reload-page` attributes, dispatched by a single delegated listener in `static/js/app.js`.
+
+### Added
+- **Speedtest history sparkline** on `/settings` — replaces the recent-results table with a dual-line `<canvas>` (download + upload) over the last 30 runs. Retention bumped 5 → 50 in `record_speedtest`. Theme-aware: re-reads CSS variables on `traverse:themechange`.
+
+### Reliability & quality
+- **Bandwidth-anomaly maths extracted into `alerts.compute_bw_anomaly(snaps, min_rate, ratio)`** — pure function (no DB, no globals) so the heuristic is testable in isolation. The poller now calls it directly; behavior is unchanged (still 1 MB/s floor × 5 ratio over ~12 snapshots).
+- **Pytest suite — 91 → 140** (+49 tests). New files:
+  - `tests/test_bw_anomaly.py` (8) — too-few-snaps, flat traffic, above-floor-but-not-spike, clear spike, spike-below-floor, zero-interval, counter-reset, custom thresholds.
+  - `tests/test_pihole_client.py` (8) — `_pihole_auth` happy path + SID cache reuse, no-password short-circuit, invalid-session response, network error, validity-window expiry; `_fetch_pihole_summary` happy path + 55 s cache, auth-failure null, fetch-error null.
+  - `tests/test_wireguard.py` (20) — `_effective_allowed_ips` per-mode behaviour, `is_peer_active` time bands, `_safe_conf_value` sanitisation, `generate_client_config` injection containment + DNS override + full-tunnel route, `format_bytes` / `format_handshake_short` unit boundaries, `parse_wg_show` empty/short/`(none)`-endpoint cases, `generate_keypair` chaining, `add_peer_to_interface` PSK-via-temp-file (PSK never on cmdline), `remove_peer_from_interface` shape, `_run` raise-on-nonzero.
+  - `tests/test_totp_ui_enroll.py` (9) — enrol login gate, start QR render, wrong-code rejection, correct-code persistence, backup-codes one-shot display, disable gates on password, regenerate-codes gates on password and replaces, backup code authenticates at login (single-use), 6-digit numeric input routes to TOTP path (won't consume a numeric backup code).
+- **`test_alerts_logging.py` made order-independent** — clears the `traverse.poller` logger's handlers before reload so a prior test's import doesn't leave stale `RotatingFileHandler` attached to the named singleton.
+
+### Database
+- New table `totp_settings(id PRIMARY KEY CHECK(id=1), secret, backup_codes, enrolled_at, updated_at)` — seeded as a single empty row on first run.
+
+### Files added
+```
+routes/security.py
+templates/security/{index, enroll, backup_codes}.html
+tests/{test_bw_anomaly, test_pihole_client, test_wireguard, test_totp_ui_enroll}.py
+```
+
+### Files modified
+```
+app.py, alerts.py, database.py
+routes/{auth, settings}.py
+static/js/app.js
+templates/{base, dashboard, topology, settings, notifications, logs, audit,
+           about, offline, map}.html
+templates/peers/{create, detail, list, wizard}.html
+templates/port_forwards/index.html
+VERSION → 1.8.0
+```
+
+---
+
+## [1.7.0] — 2026-05-11 (Security Hardening, Audit Log, Testing & CI)
+
+### Security
+- **MIT LICENSE** added.
+- **Required `SECRET_KEY`** — no insecure default; refuse to boot without it.
+- **Hardened session cookies** — `Secure`, `HttpOnly`, `SameSite=Strict`, 12 h lifetime; `session.permanent = True` so the lifetime actually applies.
+- **Security headers** — CSP, HSTS, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin` (relaxed from `no-referrer` so Chrome doesn't send `Origin: null` on form POSTs), and `Cache-Control: no-store` on non-static responses.
+- **Origin / Referer CSRF defence** — `before_request` check on state-changing methods, hostname-only (port-agnostic) compare, accepts `X-Forwarded-Host` + optional `SERVER_NAME`. Stacks on top of `SameSite=Strict`.
+- **Brute-force throttle** on `/login` and `/login/verify` — per-IP, 5 fails / 15 min, exponential lockout.
+- **TOTP setup gate** — `/totp-setup` now requires a full login (no longer reachable with `totp_pending` alone, so a half-authed attacker can't read the seed).
+- **POST-only `/logout`** — sign-out anchor in `base.html` converted to a form POST.
+- **XSS fix on peer detail** — Pi-hole query log fields HTML-escaped before `innerHTML`. The domain originates upstream, so a malicious lookup from a peer could otherwise inject script into the admin page.
+- **Config download injection guard** — `wireguard.py` sanitises endpoint / DNS / custom-routes so `\n` / `[` can't smuggle extra `[Interface]` / `[Peer]` sections into downloaded `.conf` files.
+- **Backup tightening** — `backup_export` now also strips `preshared_key`; `backup_import` validates name regex, public/preshared key format, and that `vpn_ip` falls inside `WG_SUBNET`.
+- **SSRF / proxy-input hardening** — `/api/peer/<id>/pihole-queries` validates `vpn_ip` is IPv4 and URL-quotes before splicing into the Pi-hole URL; `routes/map.py` rejects private/loopback/link-local/multicast before hitting `ipapi.co`; `notifications.py` enforces a Telegram token regex and allowlists Discord webhook hosts.
+- **Config download cache headers** — `.conf` and QR PNG endpoints now return `Cache-Control: no-store, private` + `Pragma: no-cache`. Both responses contain the peer private key.
+- **Secret scrubbing in notification log** — passwords, bearer tokens, Telegram bot tokens, and Discord webhook IDs/tokens are scrubbed from error strings before they land in `notification_log.error` (smtplib echoes credentials in exception text).
+- **Migration tripwire** — `database.py` ident / column-definition allowlist regexes around the `migrate_db` ALTER TABLE loop. Today it only takes source-code literals, but if a future contributor threads user input through it, the tripwire raises.
+- **Legacy Telegram token regex** — `alerts.py` `_legacy_telegram_fallback` validates `TELEGRAM_BOT_TOKEN` format before splicing into the api.telegram.org URL.
+
+### Added
+- **Audit log** — append-only `audit_log` table; `/audit` page (paginated, All / Peers / Auth / Settings filter chips) and `/audit.csv` export. Hooked sites: login success/failure, logout, peer create / delete / enable / disable / bulk variants (tagged `via=bulk`) / regenerate / PSK rotate / kill. Best-effort writes that never block the underlying operation.
+- **Per-peer preshared-key rotation** — `POST /peers/<id>/rotate-psk` replaces only the PSK so the peer's tunnel identity (keypair) is preserved. Re-syncs wg0 and bumps `config_regenerated_at` so the detail page can surface staleness. Detail page gets a 🔑 Rotate PSK button next to Regenerate Config.
+- **Structured logging for the poller** — `alerts.py` now writes to `/var/log/traverse/poller.log` (rotating; overridable via `TRAVERSE_POLLER_LOG`, falls back to stderr). New `_swallow(section)` context manager logs the section name + traceback before silently continuing — the catch-all robustness from `CLAUDE.md` stays, but failures are no longer invisible.
+- **ROADMAP.md** — captures near-term polish, reliability work, security follow-ups, feature ideas, and explicit non-goals.
+- **`MAX_PEERS` is env-configurable** — read from `MAX_PEERS` env (default 20), clamped to the project's 50-peer hard ceiling; garbage falls back to default. `routes/peers.py` and `routes/dashboard.py` import the shared constant from `wireguard.py` instead of redefining it.
+
+### Testing & CI
+- **Pytest suite — 0 → 91 tests** across `tests/test_{auth,csrf,peers,backup,max_peers,totp,notifications,bulk_peers,port_forwards,alerts_poller,alerts_logging,alerts_notify,audit,psk_rotation}.py`. `conftest.py` pins env vars to deterministic values, runs each test on a fresh on-disk SQLite DB in `tmp_path`, stubs the WireGuard CLI on both the `wireguard` module and the route modules that imported by name, and silences the poller thread. `requirements-dev.txt` adds pytest. `pytest.ini` wires `testpaths`.
+- **GitHub Actions CI** — `.github/workflows/ci.yml` runs on every push to `main` and on PRs: `py_compile` over every tracked Python file, `pytest -q`, then a factory smoke test (`create_app() → GET /` should redirect to `/login`). Python 3.12, pip-cached on `requirements-dev.txt`. No deploy automation — production stays git pull + systemctl restart.
+
+### Refactor
+- **Single Telegram code path** — `_notify(event_type, message, severity, legacy_html=None)` is now the only send-path inside `alerts.py`. Always goes through `notifications.send_notification()`; only when `legacy_html` is passed does it ALSO fire the env-var Telegram fallback (renamed `_legacy_telegram_fallback` to make the boundary explicit — the escape hatch for "DB is broken and WG just died" early-boot). Eliminates duplicate Telegram notifications for users with both env + DB Telegram configured. WG-state blocks collapse from ~20 lines each to one `_notify()` call.
+- **Inactivity alert routed through notifications module** — env-driven `ALERT_INACTIVE_HOURS` path now fires the new `peer_inactive_hours` event (seeded in `migrate_db`, added to `EVENT_LABELS`) and goes through `send_notification`, so it respects `/notifications` toggles and reaches every enabled channel instead of being Telegram-only.
+
+### Light theme finish
+- **CSS variable gaps closed** — append-only overrides at the end of `style.css` for `.install-banner` / `.install-banner.ios-tip` (was a literal dark gradient), `.topology-grid-bg` dots, `.toggle-switch` slider thumb, `.code-block` / `.code-wrap`, and the `.danger-zone` tint.
+- **Theme-aware Chart.js** — `window._tvPalette()` reads colors from resolved CSS variables; pages push their Chart instances onto `window._tvCharts` at construction; a single `traverse:themechange` listener updates tooltip + grid + axis colors in place. No reload needed on toggle.
+- **Theme-aware topology canvas** — peer-name labels and endpoint hostname under the server node now resolve from `--text` / `--text-dim` (previously hardcoded `#e2e8f0` / `#94a3b8`, invisible on light). Theme toggle dispatches `traverse:themechange` so the canvas redraws.
+
+### Polish
+- **Logo redesign** — cleaner compass + winding S-path motif on a dark squircle, brand-purple gradient (`#7c6af7`). All PWA icon sizes, apple-touch-icon, multi-res favicon, splash screen, and `app.png` regenerated from the new SVG so every surface is consistent. Source SVGs (`logo.svg`, `logo-mark.svg`) added for re-rendering.
+- **README hero** repointed to the in-repo `static/img/app.png` so GitHub renders the new compass mark.
+- Dead first `.num-flash` CSS rule + `num-in` keyframe removed (the later definition was already overriding it).
+
+### Fixed
+- **CSRF/origin port mismatch** — origin check compared full netloc (`host:port`), so an `Origin: https://host:443` vs `request.host: host` returned 403 on every POST, breaking login. Now compares hostnames only.
+- **Referrer-Policy: no-referrer broke login** — Chrome sends `Origin: null` on form POSTs under `no-referrer`, which the new CSRF check rejected. Relaxed to `same-origin`.
+- **Dashboard tiles + chart blank when `app.js` is deferred** — the light-theme refactor added inline `<script>` calls to `window._tvPalette()` in content blocks. With `defer` on `app.js` (added in 1.5.0), content scripts ran first and hit `ReferenceError`, halting the rest of the JS on the page — CPU/RAM/DISK tiles and the live-traffic chart stopped populating. `_tvPalette()` and `_tvCharts` are now defined in a non-deferred inline script in `base.html` before `{% block content %}`; `app.js` slimmed to the theme-change listener.
+
+### Database
+- New table `audit_log(id, ts, action, target_type, target_id, target_name, actor_ip, details)` with indexes on `ts` and `action`.
+- Seeded events extended with `psk_rotated` and `peer_inactive_hours` in `notification_event_toggles`.
+
+### Files added
+```
+LICENSE
+ROADMAP.md
+.github/workflows/ci.yml
+pytest.ini
+requirements-dev.txt
+routes/audit.py
+templates/audit.html
+static/img/{logo.svg, logo-mark.svg}
+tests/{__init__.py, conftest.py, test_auth.py, test_csrf.py, test_peers.py,
+       test_backup.py, test_max_peers.py, test_totp.py, test_notifications.py,
+       test_bulk_peers.py, test_port_forwards.py, test_alerts_poller.py,
+       test_alerts_logging.py, test_alerts_notify.py, test_audit.py,
+       test_psk_rotation.py}
+```
+
+### Files modified
+```
+app.py, alerts.py, database.py, notifications.py, wireguard.py
+routes/{api, auth, map, peers, settings}.py
+templates/{base, dashboard, topology, peers/detail}.html
+static/{css/style.css, js/app.js}
+static/{favicon.ico, img/app.png, icons/*.png}
+README.md, .env.example
+VERSION → 1.7.0
+```
+
++2866 / −124 across 56 files.
+
+---
+
 ## [1.6.0] — 2026-05-09 (UI Primitives, Sortable Peers, Bulk Actions, CSV)
 
 ### Added

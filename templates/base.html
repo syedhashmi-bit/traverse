@@ -33,11 +33,11 @@
 <body class="{% block body_class %}{% endblock %}">
 
 <!-- Chart-palette shim. app.js is loaded with `defer` further down so it
-     won't have executed by the time the content block's inline <script>
+     won't have executed by the time the content block's inline <script nonce="{{ csp_nonce }}">
      runs. Defining the helper here (non-deferred) guarantees that pages
      calling window._tvPalette() at parse-time always find it. The
      theme-change listener in app.js redirects through these globals. -->
-<script>
+<script nonce="{{ csp_nonce }}">
   window._tvCharts = window._tvCharts || [];
   window._tvPalette = window._tvPalette || function () {
     var cs = getComputedStyle(document.body);
@@ -401,7 +401,7 @@
 </div>
 
 <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
-<script>
+<script nonce="{{ csp_nonce }}">
 /* ── Help overlay controller ──────────────────────────────────────── */
 (function () {
   const overlay = document.getElementById('help-overlay');
@@ -421,7 +421,7 @@
 {% block extra_js %}{% endblock %}
 
 <!-- ── PWA: service worker + install prompt ─────────────────────────── -->
-<script>
+<script nonce="{{ csp_nonce }}">
 /* Register the service worker */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function () {

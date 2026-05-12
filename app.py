@@ -1,6 +1,7 @@
 import os
+import secrets
 from datetime import timedelta
-from flask import Flask, render_template, request
+from flask import Flask, g, render_template, request
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -58,6 +59,7 @@ def create_app():
     from routes.notifications import notifications_bp
     from routes.pwa           import pwa_bp
     from routes.audit         import audit_bp
+    from routes.security      import security_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)
@@ -74,6 +76,7 @@ def create_app():
     app.register_blueprint(notifications_bp)
     app.register_blueprint(pwa_bp)
     app.register_blueprint(audit_bp)
+    app.register_blueprint(security_bp)
 
     from alerts import start_alerts
     start_alerts()
@@ -87,6 +90,19 @@ def create_app():
                 _version = _f.read().strip() or 'dev'
     except Exception:
         pass
+
+    @app.before_request
+    def _set_csp_nonce():
+        # Fresh, unguessable nonce per request — both the CSP header and
+        # every inline <script nonce="{{ csp_nonce }}"> reference this.
+        # Dropping 'unsafe-inline' from script-src means any script that
+        # doesn't carry this nonce simply won't execute, which is the
+        # XSS-mitigation we want.
+        g.csp_nonce = secrets.token_urlsafe(18)
+
+    @app.context_processor
+    def _inject_csp_nonce():
+        return {'csp_nonce': getattr(g, 'csp_nonce', '')}
 
     @app.context_processor
     def inject_globals():
@@ -171,12 +187,18 @@ def create_app():
             'Strict-Transport-Security',
             'max-age=31536000; includeSubDomains',
         )
+        # script-src: 'self' + per-request nonce only. No 'unsafe-inline' →
+        # any inline script must carry the matching nonce or the browser
+        # refuses to execute it. style-src keeps 'unsafe-inline' because
+        # the project relies on inline `style="..."` attributes in dense
+        # admin views, and the XSS risk from style is far lower than scripts.
+        nonce = getattr(g, 'csp_nonce', '')
         resp.headers.setdefault(
             'Content-Security-Policy',
             "default-src 'self'; "
             "img-src 'self' data: blob:; "
             "style-src 'self' 'unsafe-inline'; "
-            "script-src 'self' 'unsafe-inline'; "
+            f"script-src 'self' 'nonce-{nonce}'; "
             "connect-src 'self'; "
             "frame-ancestors 'none'; "
             "base-uri 'self'; "

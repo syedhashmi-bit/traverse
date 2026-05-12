@@ -611,6 +611,59 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 })();
 
+// ── Generic data-attribute action handlers ─────────────────────────
+// Replaces inline onclick="..." handlers so the CSP can drop
+// 'unsafe-inline' from script-src. Delegated from document so it
+// works on elements injected after page-load too.
+(function () {
+  function openModal(id) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = 'flex';
+  }
+  function closeModal(id) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  }
+  function copyFromTarget(target, btn) {
+    var el = document.getElementById(target);
+    if (!el) return;
+    var text = (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')
+      ? el.value : el.textContent;
+    copyText(text, btn);
+  }
+  function togglePasswordReveal(target, btn) {
+    var el = document.getElementById(target);
+    if (!el) return;
+    var revealed = el.type === 'text';
+    el.type = revealed ? 'password' : 'text';
+    btn.textContent = revealed ? 'Show' : 'Hide';
+  }
+
+  document.addEventListener('click', function (e) {
+    var t = e.target;
+    if (!t || t.nodeType !== 1) return;
+
+    var openId = t.getAttribute('data-modal-open');
+    if (openId) { e.preventDefault(); openModal(openId); return; }
+
+    var closeId = t.getAttribute('data-modal-close');
+    if (closeId) { e.preventDefault(); closeModal(closeId); return; }
+
+    var copyTarget = t.getAttribute('data-copy-target');
+    if (copyTarget) { e.preventDefault(); copyFromTarget(copyTarget, t); return; }
+
+    var copyText2 = t.getAttribute('data-copy-text');
+    if (copyText2 !== null) { e.preventDefault(); copyText(copyText2, t); return; }
+
+    var reveal = t.getAttribute('data-toggle-password');
+    if (reveal) { e.preventDefault(); togglePasswordReveal(reveal, t); return; }
+
+    if (t.hasAttribute('data-reload-page')) {
+      e.preventDefault(); location.reload(); return;
+    }
+  });
+})();
+
 // ── Browser push notifications + sound hook ───────────────────────
 (function () {
   // Only run on authenticated pages (sidebar present)

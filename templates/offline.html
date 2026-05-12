@@ -101,15 +101,17 @@
       <span class="dot"></span>traverse requires a connection to your VPS.
       Reconnect to your network and try again.
     </p>
-    <button type="button" onclick="window.location.reload()">Retry</button>
+    <button type="button" id="offline-retry">Retry</button>
     <div class="status" id="net-status"></div>
   </div>
-  <script>
+  <script nonce="{{ csp_nonce }}">
     var s = document.getElementById('net-status');
+    var btn = document.getElementById('offline-retry');
     function update() {
       s.textContent = navigator.onLine ? 'Network: online — tap Retry' : 'Network: offline';
     }
     update();
+    if (btn) btn.addEventListener('click', function () { window.location.reload(); });
     window.addEventListener('online',  update);
     window.addEventListener('offline', update);
     window.addEventListener('online', function () { setTimeout(function(){ window.location.reload(); }, 600); });

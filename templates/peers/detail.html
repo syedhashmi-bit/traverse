@@ -31,11 +31,11 @@
       ⚡ Kill
     </button>
     {% endif %}
-    <button type="button" class="btn btn-secondary" onclick="document.getElementById('rotate-psk-modal').style.display='flex'"
+    <button type="button" class="btn btn-secondary" data-modal-open="rotate-psk-modal"
             title="Replace just the preshared key — keypair stays the same">
       🔑 Rotate PSK
     </button>
-    <button type="button" class="btn btn-secondary" onclick="document.getElementById('regen-modal').style.display='flex'">
+    <button type="button" class="btn btn-secondary" data-modal-open="regen-modal">
       ↺ Regenerate Config
     </button>
   </div>
@@ -61,7 +61,7 @@
         </div>
         <div class="detail-field">
           <div class="detail-label">VPN IP</div>
-          <div class="detail-value mono">{{ peer.vpn_ip }}/32<button type="button" class="copy-icon-btn" title="Copy VPN IP" onclick="copyText('{{ peer.vpn_ip }}', this)">⎘</button></div>
+          <div class="detail-value mono">{{ peer.vpn_ip }}/32<button type="button" class="copy-icon-btn" title="Copy VPN IP" data-copy-text="{{ peer.vpn_ip }}">⎘</button></div>
         </div>
         <div class="detail-field">
           <div class="detail-label">DNS</div>
@@ -192,7 +192,7 @@
         {% endif %}
       </div>
       <div class="card-body">
-        <button type="button" class="btn btn-secondary" id="ping-btn" onclick="doPing()">
+        <button type="button" class="btn btn-secondary" id="ping-btn">
           ⟳ Ping peer
         </button>
         <div id="ping-result" style="margin-top:12px; display:none;"></div>
@@ -367,8 +367,7 @@
           <div class="detail-label">Public Key</div>
           <div class="copy-block-wrap">
             <div class="code-block code-wrap" id="pub-key">{{ peer.public_key }}</div>
-            <button class="copy-btn"
-                    onclick="copyText(document.getElementById('pub-key').textContent, this)">
+            <button class="copy-btn" type="button" data-copy-target="pub-key">
               Copy
             </button>
           </div>
@@ -377,8 +376,7 @@
           <div class="detail-label">Private Key <span class="text-danger">(keep secret)</span></div>
           <div class="copy-block-wrap">
             <div class="code-block code-wrap" id="priv-key">{{ peer.private_key }}</div>
-            <button class="copy-btn"
-                    onclick="copyText(document.getElementById('priv-key').textContent, this)">
+            <button class="copy-btn" type="button" data-copy-target="priv-key">
               Copy
             </button>
           </div>
@@ -387,8 +385,7 @@
           <div class="detail-label">Preshared Key</div>
           <div class="copy-block-wrap">
             <div class="code-block code-wrap" id="psk">{{ peer.preshared_key }}</div>
-            <button class="copy-btn"
-                    onclick="copyText(document.getElementById('psk').textContent, this)">
+            <button class="copy-btn" type="button" data-copy-target="psk">
               Copy
             </button>
           </div>
@@ -406,8 +403,7 @@
       <div class="card-body">
         <div class="copy-block-wrap">
           <pre class="code-block" id="config-text">{{ config_text }}</pre>
-          <button class="copy-btn"
-                  onclick="copyText(document.getElementById('config-text').textContent, this)">
+          <button class="copy-btn" type="button" data-copy-target="config-text">
             Copy
           </button>
         </div>
@@ -519,8 +515,7 @@
       <form method="POST" action="{{ url_for('peers.regenerate', peer_id=peer.id) }}">
         <button type="submit" class="btn btn-danger">Yes, regenerate</button>
       </form>
-      <button type="button" class="btn btn-secondary"
-              onclick="document.getElementById('regen-modal').style.display='none'">Cancel</button>
+      <button type="button" class="btn btn-secondary" data-modal-close="regen-modal">Cancel</button>
     </div>
   </div>
 </div>
@@ -541,8 +536,7 @@
       <form method="POST" action="{{ url_for('peers.rotate_psk', peer_id=peer.id) }}">
         <button type="submit" class="btn btn-warning">Yes, rotate PSK</button>
       </form>
-      <button type="button" class="btn btn-secondary"
-              onclick="document.getElementById('rotate-psk-modal').style.display='none'">Cancel</button>
+      <button type="button" class="btn btn-secondary" data-modal-close="rotate-psk-modal">Cancel</button>
     </div>
   </div>
 </div>
@@ -577,7 +571,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<script>
+<script nonce="{{ csp_nonce }}">
 /* ── Location history — relative timestamps ────────────────────────── */
 (function () {
   function rel(iso) {
@@ -598,7 +592,7 @@
   });
 })();
 </script>
-<script>
+<script nonce="{{ csp_nonce }}">
 /* ── Edit form — tunnel mode & DNS preset ──────────────────────────── */
 (function () {
   const modeSelect  = document.getElementById('edit-tunnel-mode');
@@ -668,7 +662,7 @@
 })();
 </script>
 <script src="{{ url_for('static', filename='js/chart.min.js') }}"></script>
-<script>
+<script nonce="{{ csp_nonce }}">
 /* ── 30-Day bandwidth history chart ─────────────────────────────────── */
 (function () {
   function fmtBytes(b) {
@@ -738,7 +732,7 @@
     });
 })();
 </script>
-<script>
+<script nonce="{{ csp_nonce }}">
 /* ── Live peer stats polling ─────────────────────────────────────────── */
 (function () {
   const PEER_VPN_IP = {{ peer.vpn_ip | tojson }};
@@ -808,7 +802,7 @@
   setInterval(refresh, INTERVAL);
 })();
 </script>
-<script>
+<script nonce="{{ csp_nonce }}">
 /* ── Ping ───────────────────────────────────────────────────────────── */
 function doPing() {
   const btn = document.getElementById('ping-btn');
@@ -842,7 +836,7 @@ function doPing() {
     });
 }
 </script>
-<script>
+<script nonce="{{ csp_nonce }}">
 /* ── Per-peer bandwidth chart ────────────────────────────────────────── */
 (function () {
   function fmtRate(b) {

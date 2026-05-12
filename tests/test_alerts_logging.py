@@ -9,6 +9,16 @@ def test_swallow_context_logs_exceptions(monkeypatch, tmp_path):
     log_path = tmp_path / 'poller.log'
     monkeypatch.setenv('TRAVERSE_POLLER_LOG', str(log_path))
 
+    # The named logger (`logging.getLogger('traverse.poller')`) is a
+    # process-wide singleton — handlers attached in earlier tests survive
+    # module reloads. Clear them so _build_logger reinitialises against
+    # the per-test tmp_path.
+    import logging as _lg
+    for h in list(_lg.getLogger('traverse.poller').handlers):
+        try: h.close()
+        except Exception: pass
+        _lg.getLogger('traverse.poller').removeHandler(h)
+
     # Reload alerts so the new env var is picked up by _build_logger.
     import importlib
     import alerts

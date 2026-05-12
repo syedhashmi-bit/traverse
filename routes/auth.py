@@ -65,9 +65,41 @@ def _safe_next(target):
     return url_for('dashboard.index')
 
 
+def _get_totp_secret():
+    """Resolve the active TOTP secret. DB takes precedence so the UI-driven
+    enrol flow wins over the legacy `TOTP_SECRET` env var. Falls back to env
+    so existing setups keep working without forcing an immediate migration."""
+    try:
+        from database import get_totp_config
+        cfg = get_totp_config()
+        if cfg.get('secret'):
+            return cfg['secret']
+    except Exception:
+        pass
+    return os.getenv('TOTP_SECRET', '')
+
+
 def _get_totp():
-    secret = os.getenv('TOTP_SECRET', '')
+    secret = _get_totp_secret()
     return pyotp.TOTP(secret) if secret else None
+
+
+def _hash_backup_code(code: str) -> str:
+    """sha256 hex of an uppercase-normalised backup code (no dashes/spaces)."""
+    import hashlib
+    norm = (code or '').upper().replace('-', '').replace(' ', '')
+    return hashlib.sha256(norm.encode('utf-8')).hexdigest()
+
+
+def _try_backup_code(code: str) -> bool:
+    """Consume `code` if it matches a stored backup code. One-shot."""
+    if not code:
+        return False
+    try:
+        from database import consume_backup_code
+        return consume_backup_code(_hash_backup_code(code))
+    except Exception:
+        return False
 
 
 def _client_ip():
@@ -204,10 +236,29 @@ def verify_totp():
             error = f'Too many failed attempts. Try again in {locked}s.'
             return render_template('totp_verify.html', error=error), 429
 
-        code = request.form.get('code', '').strip().replace(' ', '')
-        totp = _get_totp()
-        # valid_window=1 accepts one step before/after for clock skew
-        if totp and totp.verify(code, valid_window=1):
+        raw_code = request.form.get('code', '').strip()
+        code     = raw_code.replace(' ', '').replace('-', '')
+        totp     = _get_totp()
+        # 6-digit numeric → TOTP path; anything longer/alphanumeric → backup code.
+        # Decoupling the two paths means a partial code typed into the TOTP box
+        # doesn't accidentally consume a backup code on the way to a failure.
+        is_numeric_6 = code.isdigit() and len(code) == 6
+        accepted = False
+        method   = ''
+        if is_numeric_6 and totp and totp.verify(code, valid_window=1):
+            accepted, method = True, 'totp'
+        elif not is_numeric_6 and _try_backup_code(raw_code):
+            accepted, method = True, 'backup_code'
+            try:
+                from notifications import send_notification
+                send_notification(
+                    'backup_code_used',
+                    f'🔑 A backup code was used to sign into traverse (IP `{ip}`)',
+                    severity='warning',
+                )
+            except Exception:
+                pass
+        if accepted:
             next_url = session.pop('totp_next', '/')
             session['totp_pending'] = False
             session['logged_in'] = True
@@ -216,7 +267,7 @@ def verify_totp():
             _notify_login_success()
             try:
                 from database import audit
-                audit('auth.login_success', actor_ip=ip, details='totp')
+                audit('auth.login_success', actor_ip=ip, details=method)
             except Exception:
                 pass
             return redirect(_safe_next(next_url))
@@ -242,9 +293,22 @@ def totp_setup():
     if not session.get('logged_in'):
         return redirect(url_for('auth.login'))
 
+    # When 2FA is enrolled via the new UI flow, send admins to the
+    # dedicated security page for backup-code management instead of the
+    # bare QR screen. The QR screen stays as a read-only fallback for
+    # env-based setups that haven't migrated yet.
+    try:
+        from database import get_totp_config
+        cfg = get_totp_config()
+    except Exception:
+        cfg = {'secret': '', 'enrolled_at': None}
+    if cfg.get('secret'):
+        return redirect(url_for('security.index'))
+
     secret = os.getenv('TOTP_SECRET', '')
     if not secret:
-        abort(404)
+        # Neither DB nor env has a secret — kick off the UI enrol flow.
+        return redirect(url_for('security.enroll_totp_start'))
     totp   = pyotp.TOTP(secret)
     uri    = totp.provisioning_uri(name='admin', issuer_name='Traverse VPN')
 

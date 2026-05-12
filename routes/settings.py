@@ -69,11 +69,20 @@ def index():
     # Generate server-side wg0.conf snippet for reference
     server_conf_snippet = _build_server_conf_snippet(server_pub)
 
-    totp_secret     = os.getenv('TOTP_SECRET', '').strip()
-    totp_configured = bool(totp_secret)
+    totp_secret_env  = os.getenv('TOTP_SECRET', '').strip()
+    try:
+        from database import get_totp_config
+        _totp_cfg = get_totp_config()
+    except Exception:
+        _totp_cfg = {'secret': '', 'backup_codes': []}
+    totp_enrolled    = bool(_totp_cfg.get('secret'))
+    totp_codes_left  = len(_totp_cfg.get('backup_codes') or [])
+    # `totp_configured` keeps the old name so existing template logic still
+    # works during the migration. True whenever 2FA is active via either path.
+    totp_configured  = totp_enrolled or bool(totp_secret_env)
 
     from database import get_speedtest_results
-    speedtest_results = get_speedtest_results(limit=5)
+    speedtest_results = get_speedtest_results(limit=30)
 
     return render_template(
         'settings.html',
@@ -87,6 +96,8 @@ def index():
         wg_port            = WG_PORT,
         dns                = WG_DNS,
         totp_configured    = totp_configured,
+        totp_enrolled      = totp_enrolled,
+        totp_codes_left    = totp_codes_left,
         speedtest_results  = speedtest_results,
         pihole_enabled     = PIHOLE_ENABLED,
         pihole_status      = _pihole_status_detail(),

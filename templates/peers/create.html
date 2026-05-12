@@ -130,7 +130,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<script>
+<script nonce="{{ csp_nonce }}">
 (function () {
   const modeSelect = document.getElementById('tunnel_mode');
   const routeGroup = document.getElementById('custom-routes-group');

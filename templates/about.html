@@ -46,7 +46,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<script>
+<script nonce="{{ csp_nonce }}">
 /* Render raw markdown-ish CHANGELOG.md as styled HTML */
 (function () {
   const el = document.getElementById('changelog-content');

@@ -60,7 +60,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<script>
+<script nonce="{{ csp_nonce }}">
 (function () {
   const canvas  = document.getElementById('topo-canvas');
   const ctx     = canvas.getContext('2d');

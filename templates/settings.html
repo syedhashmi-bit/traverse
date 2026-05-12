@@ -46,8 +46,7 @@
           <div class="detail-label">Server Public Key</div>
           <div class="copy-block-wrap">
             <div class="code-block code-wrap" id="server-pub">{{ server_pub }}</div>
-            <button class="copy-btn"
-                    onclick="copyText(document.getElementById('server-pub').textContent, this)">
+            <button class="copy-btn" type="button" data-copy-target="server-pub">
               Copy
             </button>
           </div>
@@ -92,8 +91,7 @@
       <div class="card-body">
         <div class="copy-block-wrap">
           <pre class="code-block" id="srv-conf">{{ server_conf_snippet }}</pre>
-          <button class="copy-btn"
-                  onclick="copyText(document.getElementById('srv-conf').textContent, this)">
+          <button class="copy-btn" type="button" data-copy-target="srv-conf">
             Copy
           </button>
         </div>
@@ -126,16 +124,30 @@
         {% endif %}
       </div>
       <div class="card-body">
-        {% if totp_configured %}
+        {% if totp_enrolled %}
         <p class="text-sm text-muted" style="line-height:1.7;">
-          TOTP is enabled. Every login requires a 6-digit code after password verification.
+          2FA is enrolled — every login requires a 6-digit code after the password.
+          {{ totp_codes_left }} backup code{{ '' if totp_codes_left == 1 else 's' }} remaining.
         </p>
-        <a href="{{ url_for('auth.totp_setup') }}" class="btn btn-secondary btn-sm mt-12">View Setup QR</a>
+        <a href="{{ url_for('security.index') }}" class="btn btn-secondary btn-sm mt-12">
+          Manage 2FA →
+        </a>
+        {% elif totp_configured %}
+        <p class="text-sm text-muted" style="line-height:1.7;">
+          2FA is active via the legacy <code style="color:var(--accent)">TOTP_SECRET</code> env var.
+          Migrate to the UI flow to get backup codes and a disable button.
+        </p>
+        <a href="{{ url_for('security.index') }}" class="btn btn-secondary btn-sm mt-12">
+          Migrate to UI 2FA →
+        </a>
         {% else %}
         <p class="text-sm text-muted" style="line-height:1.7;">
-          TOTP is not configured. Add <code style="color:var(--accent)">TOTP_SECRET</code>
-          to <code style="color:var(--accent)">.env</code> and restart to enable 2FA.
+          Add a second factor to require a 6-digit code at every sign-in.
+          You'll also receive 10 single-use backup codes.
         </p>
+        <a href="{{ url_for('security.index') }}" class="btn btn-primary btn-sm mt-12">
+          Enable 2FA →
+        </a>
         {% endif %}
       </div>
     </div>
@@ -211,10 +223,10 @@ WG_DNS={{ dns }}</div>
                      readonly style="background:var(--surface-2); border:1px solid var(--border);
                      border-radius:var(--radius); padding:4px 10px; color:var(--text); font-family:var(--mono);
                      font-size:0.82rem; width:240px;">
-              <button class="copy-btn btn-sm"
-                      onclick="this.previousElementSibling.type=this.previousElementSibling.type==='password'?'text':'password'; this.textContent=this.previousElementSibling.type==='text'?'Hide':'Show'">Show</button>
-              <button class="copy-btn btn-sm" style="margin-left:4px;"
-                      onclick="copyText(document.getElementById('ph-pass').value, this)">Copy</button>
+              <button class="copy-btn btn-sm" type="button"
+                      data-toggle-password="ph-pass">Show</button>
+              <button class="copy-btn btn-sm" type="button" style="margin-left:4px;"
+                      data-copy-target="ph-pass">Copy</button>
             </span>
           </div>
         </div>
@@ -294,31 +306,25 @@ WG_DNS={{ dns }}</div>
         </div>
 
         {% if speedtest_results %}
+        {% set _hist = speedtest_results|reverse|list %}
         <div style="margin-top:20px;">
-          <div class="form-label" style="margin-bottom:8px;">Recent Results</div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>↓ Download</th>
-                  <th>↑ Upload</th>
-                  <th>Ping</th>
-                  <th>Server</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for r in speedtest_results %}
-                <tr>
-                  <td class="text-muted text-sm">{{ r.tested_at[:16] }} UTC</td>
-                  <td class="td-mono text-success">{{ '%.1f'|format(r.download_mbps) }} Mbps</td>
-                  <td class="td-mono" style="color:var(--accent);">{{ '%.1f'|format(r.upload_mbps) }} Mbps</td>
-                  <td class="td-mono text-muted">{{ '%.0f'|format(r.ping_ms) }} ms</td>
-                  <td class="text-muted text-sm">{{ r.server_name or '—' }}</td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
+          <div class="form-label" style="margin-bottom:8px;">
+            History — last {{ _hist|length }} run{{ '' if _hist|length == 1 else 's' }}
+          </div>
+          <div id="speedtest-history" style="background:var(--surface-2); border:1px solid var(--border);
+               border-radius:var(--radius); padding:14px 16px;">
+            <div style="display:flex; flex-wrap:wrap; gap:18px; font-size:0.8rem; margin-bottom:10px;">
+              <span style="color:var(--text-muted);"><span style="display:inline-block;width:10px;height:2px;background:#22c55e;vertical-align:middle;margin-right:6px;"></span>Download (Mbps)</span>
+              <span style="color:var(--text-muted);"><span style="display:inline-block;width:10px;height:2px;background:var(--accent);vertical-align:middle;margin-right:6px;"></span>Upload (Mbps)</span>
+              <span style="color:var(--text-muted); margin-left:auto;">
+                latest ↓ <span class="td-mono text-success">{{ '%.1f'|format(speedtest_results[0].download_mbps) }}</span>
+                · ↑ <span class="td-mono" style="color:var(--accent);">{{ '%.1f'|format(speedtest_results[0].upload_mbps) }}</span>
+                · {{ '%.0f'|format(speedtest_results[0].ping_ms) }} ms
+              </span>
+            </div>
+            <canvas id="speedtest-spark" width="600" height="80"
+                    data-history="{{ _hist|tojson|forceescape }}"
+                    style="width:100%; max-width:100%; height:80px; display:block;"></canvas>
           </div>
         </div>
         {% endif %}
@@ -329,7 +335,7 @@ WG_DNS={{ dns }}</div>
 
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 /* ── Backup file preview ──────────────────────────────────── */
 document.getElementById('backup-file').addEventListener('change', function(e) {
   const file = e.target.files[0];
@@ -398,11 +404,71 @@ document.getElementById('backup-file').addEventListener('change', function(e) {
             '<span style="color:var(--accent);">↑ ' + r.upload + ' Mbps</span> &nbsp; ' +
             '<span style="color:var(--text-muted);">Ping ' + r.ping + ' ms</span>' +
             (r.server ? '<br><span style="color:var(--text-dim);font-size:0.78rem;">via ' + r.server + '</span>' : '') +
-            '<br><a href="" style="color:var(--accent);font-size:0.78rem;" onclick="location.reload()">Reload to see in history</a>';
+            '<br><a href="" id="speedtest-reload" style="color:var(--accent);font-size:0.78rem;">Reload to see in history</a>';
+          var rl = document.getElementById('speedtest-reload');
+          if (rl) rl.addEventListener('click', function (e) { e.preventDefault(); location.reload(); });
         }
       })
       .catch(() => {});
   }
+})();
+
+/* ── Speedtest history sparkline ─────────────────────────── */
+(function () {
+  var c = document.getElementById('speedtest-spark');
+  if (!c) return;
+  var raw = c.getAttribute('data-history') || '[]';
+  var hist;
+  try { hist = JSON.parse(raw); } catch (e) { hist = []; }
+  if (!hist.length) return;
+
+  function draw() {
+    var dpr = window.devicePixelRatio || 1;
+    var rect = c.getBoundingClientRect();
+    c.width  = Math.floor(rect.width  * dpr);
+    c.height = Math.floor(rect.height * dpr);
+    var ctx = c.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    var w = rect.width, h = rect.height;
+    ctx.clearRect(0, 0, w, h);
+
+    var ds = hist.map(function (r) { return r.download_mbps || 0; });
+    var us = hist.map(function (r) { return r.upload_mbps || 0; });
+    var maxV = Math.max.apply(null, ds.concat(us, [1]));
+    var pad  = 4;
+    function xy(arr, i) {
+      var x = pad + (i * (w - 2 * pad)) / Math.max(1, arr.length - 1);
+      var y = h - pad - ((arr[i] / maxV) * (h - 2 * pad));
+      return [x, y];
+    }
+    function plot(arr, stroke) {
+      ctx.beginPath();
+      for (var i = 0; i < arr.length; i++) {
+        var p = xy(arr, i);
+        if (i === 0) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]);
+      }
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth   = 1.5;
+      ctx.stroke();
+      // dots
+      ctx.fillStyle = stroke;
+      for (var j = 0; j < arr.length; j++) {
+        var pp = xy(arr, j);
+        ctx.beginPath();
+        ctx.arc(pp[0], pp[1], 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    plot(ds, '#22c55e');
+    var cs = getComputedStyle(document.body);
+    var accent = (cs.getPropertyValue('--accent') || '').trim() || '#7c6af7';
+    plot(us, accent);
+  }
+
+  draw();
+  window.addEventListener('resize', draw);
+  document.addEventListener('traverse:themechange', draw);
 })();
 </script>
 {% endblock %}

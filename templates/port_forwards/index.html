@@ -9,7 +9,7 @@
     <div class="section-sub">DNAT rules that forward public ports to VPN peers.</div>
   </div>
   {% if peers %}
-  <button type="button" class="btn btn-primary" onclick="document.getElementById('pf-add-modal').style.display='flex'">
+  <button type="button" class="btn btn-primary" data-modal-open="pf-add-modal">
     + Add Rule
   </button>
   {% endif %}
@@ -89,7 +89,7 @@
     <div class="empty-state-heading">No port forwards</div>
     <div class="empty-state-sub">Create a rule to expose a peer service to the public internet.</div>
     <button type="button" class="btn btn-primary btn-lg" style="margin-top:18px;"
-            onclick="document.getElementById('pf-add-modal').style.display='flex'">
+            data-modal-open="pf-add-modal">
       + Add Rule
     </button>
   </div>
@@ -152,8 +152,7 @@
       </div>
       <div class="action-bar" style="margin-top:18px;">
         <button type="submit" class="btn btn-primary">Create Rule</button>
-        <button type="button" class="btn btn-secondary"
-                onclick="document.getElementById('pf-add-modal').style.display='none'">Cancel</button>
+        <button type="button" class="btn btn-secondary" data-modal-close="pf-add-modal">Cancel</button>
       </div>
     </form>
   </div>
@@ -161,7 +160,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<script>
+<script nonce="{{ csp_nonce }}">
 document.getElementById('pf-add-modal').addEventListener('click', function(e) {
   if (e.target === this) this.style.display = 'none';
 });

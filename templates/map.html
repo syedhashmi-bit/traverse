@@ -94,7 +94,7 @@
 {% block extra_js %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/leaflet.min.css') }}">
 <script src="{{ url_for('static', filename='js/leaflet.min.js') }}"></script>
-<script>
+<script nonce="{{ csp_nonce }}">
 (function () {
   // Fix default marker icon paths
   delete L.Icon.Default.prototype._getIconUrl;

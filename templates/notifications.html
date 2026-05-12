@@ -346,7 +346,7 @@
 }
 </style>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 (function () {
   // Test-send buttons — collect current form values and POST as JSON
   document.querySelectorAll('button[data-test]').forEach(btn => {
