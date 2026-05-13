@@ -6,8 +6,8 @@
 <div class="map-grid" style="display:grid; grid-template-columns:1fr 320px; gap:20px; height:calc(100vh - 120px);">
 
   <!-- Map -->
-  <div class="card map-vignette" style="overflow:hidden; position:relative;">
-    <div id="map" style="width:100%; height:100%; min-height:500px; border-radius:var(--radius-lg);"></div>
+  <div class="card map-vignette" style="overflow:hidden; position:relative; height:calc(100vh - 140px);">
+    <div id="map" style="width:100%; height:100%; min-height:400px;"></div>
     <div id="map-loader" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
          background:var(--surface); padding:16px 24px; border-radius:var(--radius); border:1px solid var(--border);
          color:var(--text-muted); font-size:0.85rem;">
@@ -106,11 +106,32 @@
 
   const map = L.map('map', { zoomControl: true, scrollWheelZoom: true }).setView([20, 0], 3);
 
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  // Recalculate container dimensions after CSS grid has finished layout.
+  // Without this, height:100% inside a calc() grid row is not yet resolved
+  // when Leaflet runs, so it tiles only a fraction of the visible area.
+  setTimeout(() => map.invalidateSize(), 100);
+  new ResizeObserver(() => map.invalidateSize()).observe(document.getElementById('map'));
+
+  const cartoLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/">CARTO</a>',
     subdomains: 'abcd',
     maxZoom: 19,
   }).addTo(map);
+
+  // If CARTO tiles fail (network block, CDN issue, etc.), swap to OSM
+  // exactly once so the map still renders something useful instead of grey.
+  let osmFallbackTriggered = false;
+  cartoLayer.on('tileerror', (e) => {
+    if (osmFallbackTriggered) return;
+    osmFallbackTriggered = true;
+    console.warn('[map] CARTO tile failed, falling back to OSM:', e);
+    map.removeLayer(cartoLayer);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      subdomains: 'abc',
+      maxZoom: 19,
+    }).addTo(map);
+  });
 
   // ── State ────────────────────────────────────────────────────────────────────
   const peerMarkers = {};

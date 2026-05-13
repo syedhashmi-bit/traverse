@@ -2,7 +2,7 @@
 // cache-then-network for static assets, falls back to /offline when the
 // network is unreachable. API calls (`/api/*`) are never cached.
 
-const CACHE_NAME = 'traverse-v3';
+const CACHE_NAME = 'traverse-v4';
 
 // Real app shell. NOTE: do NOT include '/' here — for unauthenticated visits
 // it 302→/login, and authenticated state is per-session, so precaching it
@@ -38,6 +38,12 @@ self.addEventListener('fetch', event => {
   if (req.method !== 'GET') return;
 
   const url = new URL(req.url);
+
+  // Only handle same-origin requests. Intercepting cross-origin fetches
+  // (e.g. CARTO map tiles) forces them through fetch(req), which returns
+  // an opaque response — recent Chrome versions can fail to paint these
+  // into <img> tags, breaking the map. Let the browser handle them natively.
+  if (url.origin !== self.location.origin) return;
 
   // Never cache API calls — they must always be fresh.
   if (url.pathname.startsWith('/api/')) return;

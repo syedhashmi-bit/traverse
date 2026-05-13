@@ -1039,6 +1039,9 @@ tbody td {
 
 /* ── Leaflet dark overrides ──────────────────────────────────────────────── */
 
+/* CARTO dark_all ocean colour — hides the grey Leaflet canvas edge */
+.leaflet-container { background: #1a1a2e !important; }
+
 .leaflet-popup-content-wrapper {
   background: var(--surface-2);
   color: var(--text);
