@@ -1,5 +1,83 @@
 # Changelog
 
+## [1.10.0] — 2026-05-19 (UI Polish — Seamless Transitions + Aesthetic Pass)
+
+A non-functional release: no behavioural or data-model changes, no new
+routes. The goal was to take the existing dark theme from "functional"
+to "feels deliberate" — coherent motion, a consistent visual rhythm,
+and a few touches of glass / gradient / blur that read as modern
+without being noisy.
+
+### Motion — unified tokens + page transitions
+- **Motion design tokens** (`--ease-out`, `--ease-in-out`, `--ease-spring`, `--dur-instant|fast|base|slow`) replace the ad-hoc `0.1 / 0.12 / 0.15 / 0.18 / 0.2 s` sprinkle that had accumulated across `style.css`. Every new transition reads from the same scale so timing feels consistent across the app.
+- **Cross-fade page transitions** — `body.tv-navigating` fades the current view out before the browser commits to the next URL, and the new `.page-content` animation eases it in. Internal anchor clicks are intercepted so the perceptual cut between routes is replaced with a brief cross-fade; external / new-tab / modified-click / cross-origin / `download` / hash-only / `data-no-transition` links are passed through untouched.
+- **View Transitions API opt-in** (`@view-transition { navigation: auto; }`) — Chromium-based browsers get a native cross-fade for free; the JS-driven path detects `document.startViewTransition` and bows out so there's no double-animating.
+- **`bfcache` safety** — a `pageshow` listener wipes `tv-navigating` on back / forward so the page doesn't restore with a faded body.
+
+### Aesthetic — glass, gradient, ambient depth
+- **Glass topbar + bottom-nav** — `backdrop-filter: saturate(140%) blur(14px)` over a translucent surface. Content scrolls visibly underneath instead of cutting against a flat panel.
+- **Ambient body gradient** — fixed `body::before` paints two faint purple radials (top-left + bottom-right) plus a centre vignette. Cards now float against texture instead of pure black.
+- **Active nav indicator** — the `border-left: 3px solid var(--accent)` on `.nav-link.active` is replaced with a `::before` pseudo that springs in (`scaleY 0 → 1`, `--ease-spring`) and uses a purple → violet linear gradient with an accent-tinted glow.
+- **Hairline dividers** — the topbar bottom edge, sidebar right edge, card headers, and `<thead>` row use a horizontal gradient `linear-gradient(transparent, var(--border), transparent)` so seams fade at the edges instead of running pillar-to-pillar.
+- **Bottom-nav SVG icons** — replaced `⬡ ◈ 🌍 ⚑ ⚙` with the same SVG set the sidebar uses (`stroke="currentColor" width="22"`). The mobile bottom-nav now matches the desktop sidebar 1:1.
+- **Topbar WireGuard status pill** — `WG UP` / `WG DOWN` chip with a coloured dot and an accent-tinted background. Collapses to just the dot below 540 px so the topbar stays compact on mobile.
+- **Active bottom-nav top accent** — 2 px gradient line `transparent → accent → transparent` with a glow.
+
+### Micro-interactions
+- **Cursor-aware card sheen** — `.stat-card` (and any `.card.tv-sheen` / `.noc-panel.tv-sheen`) has an `::after` radial gradient that follows the pointer via `--mx` / `--my` custom properties set in a `pointermove` handler. Coarse-pointer (touch) devices skip the JS so battery isn't drained on phones.
+- **Stat-value count-up** — `.stat-card-value`, `.noc-val`, and `[data-tv-count]` whose text parses as an integer animate from `0 → final` over 700 ms with an `ease-out` cubic. Non-numeric values (subnet, `● RUN`, etc.) are skipped automatically.
+- **Button micro-depth** — `.btn` lifts 1 px on `:hover`, settles back with a 0.97 scale on `:active`. Primary / success / danger / warning variants get a colour-tinted shadow on hover (e.g. `box-shadow: 0 6px 18px -6px rgba(124, 106, 247, 0.55)` for primary). `[disabled]` buttons never lift.
+- **Staggered grid entrance** — `.stats-grid > *` and `.noc-bar .noc-stat` fade-and-rise in 40 ms apart up to the 7th item, so a page load reads as a wave instead of a slam. Auto-clamps after the 8th item to avoid runaway delays on large grids.
+- **Stat / card lift on hover** — 2 px translateY plus a soft 8 px shadow.
+- **Bottom-nav active icon** — translates up 1 px and scales 1.06× on the active tab.
+
+### Focus + accessibility
+- **Coherent `:focus-visible` ring** — `outline: 2px solid color-mix(in srgb, var(--accent) 75%, transparent)` with a 4 px accent-tinted box-shadow halo. `outline: none` on `:focus` (non-visible) so mouse users don't see it; keyboard users still do. Inputs keep their own ring tuned to match.
+- **`prefers-reduced-motion: reduce` master switch** — collapses every animation and transition (including `scroll-behavior`) to ~0 ms. The page-exit fade and the count-up animator both bail out at the JS layer too.
+
+### Typography rhythm
+- **Numeric typography** — `font-variant-numeric: tabular-nums` applied to every stat-value / monospace class so digit columns line up. `font-feature-settings: "cv11", "ss01", "ss03"` enables prettier `1` / `a` / `l` glyphs on Inter where supported.
+- **Heading tracking** — `.page-title`, `.card-title`, `.help-title`, `.tv-modal-hdr` get `letter-spacing: -0.012em` for the slightly tighter display feel.
+- **Uppercase label rhythm** — `.stat-card-label`, `.noc-lbl`, `thead th`, `.filter-chip-group-label` use `letter-spacing: 0.075em` + `font-weight: 600` for consistent caps.
+- **`text-rendering: optimizeLegibility` + antialiasing** — applied globally on `body`.
+
+### Bug fix
+- **`/about` CSP error** — the changelog was rendered with `{{ changelog | safe | replace('\n', '<br>') }}`, which let literal `<script>` text inside backticks (added by 1.7.0 / 1.8.0 entries describing CSP work) be parsed as real `<script>` tags before the existing nonce-bearing JS replaced the innerHTML. Chrome's CSP blocked the orphans and surfaced two console errors per page load. Fix: drop the server-rendered fallback — let the existing JS produce the only `innerHTML` write.
+
+### Implementation
+- **Files added**: none.
+- **`static/css/style.css`** — ~430 lines appended at the end across two polish blocks. Per the longstanding "never edit earlier CSS rules" guideline, all new rules are appended so source order makes them win.
+- **`static/js/app.js`** — three additions: the page-exit fade interceptor (handles `<a>` clicks + form submits, with `View-Transitions` / reduce-motion bail-outs), the count-up animator (DOMContentLoaded scan + `requestAnimationFrame` cubic-ease), and the cursor-sheen `pointermove` setter (skipped on coarse-pointer devices).
+- **`templates/base.html`** — added the topbar `.topbar-wg-pill`; replaced the five `<span class="icon">…</span>` glyphs in `.bottom-nav` with `<svg class="icon-svg">…</svg>` matching the sidebar set.
+- **`templates/about.html`** — emptied the `#changelog-content` server-rendered block (the JS owns the render).
+
+### Verified
+- **Pytest** — `175 passed in ~14 s` (no behavioural changes; suite unchanged).
+- **Playwright headless** — logged in (password + TOTP), navigated 6 pages × desktop + mobile viewports = 12 screenshots, asserted via `getComputedStyle`:
+  - `.topbar` backdrop-filter: `saturate(1.4) blur(14px)` ✓
+  - `.bottom-nav` backdrop-filter: `saturate(1.4) blur(14px)` ✓
+  - `body::before` background: 3-layer radial gradient ✓
+  - `.topbar-wg-pill` present, text `"WG UP"` ✓
+  - 5 of 5 `.bottom-nav-item .icon-svg`; no leftover `.icon` emoji span ✓
+  - `.nav-link.active::before` background: `linear-gradient(rgb(124, 106, 247), rgb(183, 148, 244))` ✓
+  - CSS tokens `--ease-out`, `--dur-base`, `--t-md` all resolved ✓
+- **Console** — 0 errors, 0 warnings across all 6 pages × 2 viewports.
+
+### Suite total
+**175 tests** (unchanged). UI polish has no test surface beyond the static-asset gzip / cache-header checks already covered.
+
+### Files modified
+```
+static/css/style.css   (~430 lines appended)
+static/js/app.js       (~150 lines added: page-exit fade, count-up, sheen)
+templates/base.html    (topbar WG pill + bottom-nav SVGs)
+templates/about.html   (drop server-rendered changelog block)
+VERSION                → 1.10.0
+CHANGELOG.md
+```
+
+---
+
 ## [1.9.0] — 2026-05-12 (Per-Peer Schedules)
 
 ### Added

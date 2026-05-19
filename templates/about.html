@@ -38,7 +38,9 @@
   <div class="card">
     <div class="card-header"><span class="card-title">Changelog</span></div>
     <div class="changelog-body" id="changelog-content">
-      {{ changelog | safe | replace('\n', '<br>') }}
+      {# Empty until the script below replaces it. Auto-escaping the raw
+         markdown would parse literal `<script>` text inside backticks as
+         real script tags before the JS swaps the content, tripping CSP. #}
     </div>
   </div>
 

@@ -134,6 +134,74 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
+// ── Page exit fade ────────────────────────────────────────────────────
+// Intercepts internal link clicks and fades the content out before the
+// browser navigates, so the perceptual cut between pages is replaced
+// with a brief cross-fade (paired with .page-content's enter animation).
+// Browsers that support the View Transitions API will already get a
+// native cross-fade via @view-transition in CSS — we skip the manual
+// fade there to avoid double-animating.
+(function () {
+  if (typeof window === 'undefined') return;
+
+  const NATIVE_VT = 'startViewTransition' in document;
+  // If the user prefers reduced motion, do nothing — CSS already kills
+  // the entrance animation.
+  const reduceMotion = window.matchMedia
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  if (NATIVE_VT || reduceMotion) return;
+
+  // Pageshow fires on every navigation, including bfcache restore. Wipe
+  // the navigating class so a "back" button doesn't leave the page faded.
+  window.addEventListener('pageshow', () => {
+    document.body.classList.remove('tv-navigating');
+  });
+
+  function shouldIntercept(a, ev) {
+    if (!a || !a.href) return false;
+    if (ev.defaultPrevented) return false;
+    if (ev.button !== 0) return false;
+    if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return false;
+    if (a.target && a.target !== '' && a.target !== '_self') return false;
+    if (a.hasAttribute('download')) return false;
+    if (a.dataset.noTransition === 'true') return false;
+    let url;
+    try { url = new URL(a.href, location.href); } catch (_) { return false; }
+    if (url.origin !== location.origin) return false;
+    // Same-page hash anchors don't navigate — leave them alone.
+    if (url.pathname === location.pathname && url.search === location.search && url.hash) return false;
+    // mailto / tel / etc.
+    if (!/^https?:$/.test(url.protocol)) return false;
+    return true;
+  }
+
+  document.addEventListener('click', (ev) => {
+    const a = ev.target && ev.target.closest && ev.target.closest('a');
+    if (!shouldIntercept(a, ev)) return;
+    ev.preventDefault();
+    document.body.classList.add('tv-navigating');
+    // 180ms matches the CSS .tv-navigating transition; add a small safety
+    // margin so the fade is visible before the browser commits the nav.
+    setTimeout(() => { window.location.href = a.href; }, 170);
+  });
+
+  // Forms that POST to a new page — fade out before submit.
+  document.addEventListener('submit', (ev) => {
+    const f = ev.target;
+    if (!f || !(f instanceof HTMLFormElement)) return;
+    if (f.dataset.noTransition === 'true') return;
+    if (f.target && f.target !== '' && f.target !== '_self') return;
+    // Skip AJAX-handled forms (those preventDefault inside their own handler;
+    // we run on the same event bubble so we can detect this).
+    // Use a microtask to let other listeners call preventDefault first.
+    Promise.resolve().then(() => {
+      if (ev.defaultPrevented) return;
+      document.body.classList.add('tv-navigating');
+    });
+  });
+})();
+
 // ── Sound alert toggle (Web Audio API tones) ──────────────────────
 (function () {
   const KEY = 'traverse-sound-enabled';
@@ -728,4 +796,79 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   poll();
   setInterval(poll, 60000);
+})();
+
+// ── Stat-value count-up animation ──────────────────────────────────────
+// Targets `.stat-card-value`, `.noc-val`, and `[data-tv-count]` whose
+// textContent parses as an integer (peer counts, etc). Ticks from 0 to
+// the final value over ~700ms on first paint. Skipped under reduced
+// motion or when the value is non-numeric (e.g. "10.8.0.0/24", "● RUN").
+(function () {
+  if (typeof window === 'undefined') return;
+  const reduceMotion = window.matchMedia
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduceMotion) return;
+
+  function isIntegerText(s) {
+    if (s == null) return false;
+    const t = String(s).trim();
+    return /^-?\d+$/.test(t);
+  }
+
+  function animate(el, target) {
+    const start = performance.now();
+    const dur = 700;
+    function tick(now) {
+      const t = Math.min(1, (now - start) / dur);
+      // ease-out cubic
+      const e = 1 - Math.pow(1 - t, 3);
+      const v = Math.round(target * e);
+      el.textContent = String(v);
+      if (t < 1) requestAnimationFrame(tick);
+      else el.textContent = String(target);
+    }
+    requestAnimationFrame(tick);
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const nodes = document.querySelectorAll(
+      '.stat-card-value, .noc-val, [data-tv-count]'
+    );
+    nodes.forEach(el => {
+      if (el.dataset.tvCounted === '1') return;
+      const txt = el.textContent;
+      if (!isIntegerText(txt)) return;
+      const n = parseInt(txt, 10);
+      // Skip trivially-small numbers — animating "0 → 1" is silly.
+      if (!Number.isFinite(n) || Math.abs(n) < 2) return;
+      el.dataset.tvCounted = '1';
+      animate(el, n);
+    });
+  });
+})();
+
+// ── Cursor-aware card sheen ────────────────────────────────────────────
+// Sets `--mx` / `--my` CSS custom properties on .stat-card (and any
+// .card.tv-sheen / .noc-panel.tv-sheen) so the ::after radial gradient
+// follows the pointer. Pure aesthetic; no-op on touch devices.
+(function () {
+  if (typeof window === 'undefined') return;
+  const COARSE = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+  if (COARSE) return;
+
+  function bind(el) {
+    if (el._tvSheen) return;
+    el._tvSheen = true;
+    el.addEventListener('pointermove', (ev) => {
+      const r = el.getBoundingClientRect();
+      const x = ((ev.clientX - r.left) / r.width) * 100;
+      const y = ((ev.clientY - r.top) / r.height) * 100;
+      el.style.setProperty('--mx', x.toFixed(1) + '%');
+      el.style.setProperty('--my', y.toFixed(1) + '%');
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.stat-card, .card.tv-sheen, .noc-panel.tv-sheen').forEach(bind);
+  });
 })();

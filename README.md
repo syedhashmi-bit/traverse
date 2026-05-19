@@ -56,6 +56,15 @@ A self-hosted WireGuard VPN dashboard built with Flask. Manage peers, monitor li
 - **Skeleton states** while live values load
 - **Friendly empty states** with iconography and CTAs
 
+### UI polish (v1.10.0)
+- **Cross-fade page transitions** — internal navigation fades the current view out before the next page commits; uses the native View Transitions API on Chromium, falls back to a JS-driven fade elsewhere
+- **Glass topbar + bottom-nav** — translucent surface with `backdrop-filter: blur(14px)`; content scrolls visibly underneath
+- **Ambient body gradient** — fixed purple radial mesh so cards float against texture instead of pure black
+- **Cursor-aware card sheen** — stat cards have a subtle radial highlight that follows the pointer
+- **Number count-up** — stat values tick from 0 to the final number on first render (skipped under reduced motion)
+- **Coherent motion tokens** — every transition reads from the same `--ease-out` / `--dur-*` scale so timing feels consistent across the app
+- **`prefers-reduced-motion: reduce`** — fully respected; collapses every animation and the cross-fade interceptor bails out at the JS layer too
+
 ### Operations
 - **Port forwarding** — DNAT iptables rules at `/port-forwards/`; persisted to `/etc/iptables/rules.v4`
 - **System log viewer** at `/logs` (live tail with filter for traverse + WireGuard)

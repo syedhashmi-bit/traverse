@@ -3292,3 +3292,548 @@ body.theme-light .danger-zone {
    confirm modals use inline `var(--surface)` already — nothing to do
    there. */
 
+/* ═══════════════════════════════════════════════════════════════════════
+   MOTION POLISH (v1.10.0) — seamless transitions pass
+   Everything below is appended so source order wins over earlier rules.
+   Tokens unify timing/easing across previously ad-hoc 0.1/0.12/0.15/0.18s
+   transitions. All decorative motion is gated behind prefers-reduced-motion.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --ease-out:     cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-in-out:  cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring:  cubic-bezier(0.34, 1.32, 0.64, 1);
+  --dur-instant:  90ms;
+  --dur-fast:     140ms;
+  --dur-base:     200ms;
+  --dur-slow:     320ms;
+}
+
+html { scroll-behavior: smooth; }
+
+/* ── Page enter — slightly slower + larger lift; pair with JS-driven exit ── */
+@keyframes tv-page-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.page-content {
+  animation: tv-page-enter var(--dur-base) var(--ease-out) both;
+  will-change: opacity, transform;
+}
+/* Body-level navigating state — set by JS on internal-link click to fade
+   the current view out before the browser navigates. Keeps perceptual
+   continuity between routes without needing a SPA. */
+body.tv-navigating .content {
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out);
+}
+
+/* ── View Transitions API (progressive enhancement) ─────────────────────
+   Browsers that support `@view-transition` get a fully native cross-fade
+   between pages. Others fall through to the JS-driven .tv-navigating path. */
+@view-transition { navigation: auto; }
+::view-transition-old(root) {
+  animation: tv-vt-out 180ms var(--ease-out) both;
+}
+::view-transition-new(root) {
+  animation: tv-vt-in var(--dur-base) var(--ease-out) both;
+}
+@keyframes tv-vt-out {
+  to { opacity: 0; transform: translateY(-4px); }
+}
+@keyframes tv-vt-in {
+  from { opacity: 0; transform: translateY(6px); }
+}
+
+/* ── Sidebar nav-link polish ────────────────────────────────────────────
+   The earlier rule only animates opacity/background/border-color. Add
+   an animated accent line that slides in from the left on active state. */
+.nav-link {
+  transition:
+    opacity     var(--dur-fast) var(--ease-out),
+    background  var(--dur-fast) var(--ease-out),
+    color       var(--dur-fast) var(--ease-out),
+    border-left-color var(--dur-fast) var(--ease-out);
+}
+.nav-link::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 8px; bottom: 8px;
+  width: 3px;
+  background: var(--accent);
+  border-radius: 0 2px 2px 0;
+  transform: scaleY(0);
+  transform-origin: center;
+  opacity: 0;
+  transition:
+    transform var(--dur-base) var(--ease-spring),
+    opacity   var(--dur-fast) var(--ease-out);
+  pointer-events: none;
+}
+.nav-link.active::before { transform: scaleY(1); opacity: 1; }
+/* The original `.nav-link.active` rule sets `border-left-color: var(--accent)`;
+   we let the ::before pseudo handle it visually instead. Hide the border. */
+.nav-link.active { border-left-color: transparent; }
+
+.nav-icon { transition: transform var(--dur-fast) var(--ease-out); }
+.nav-link:hover .nav-icon { transform: translateX(1px); }
+
+/* ── Sidebar overlay (mobile drawer) — fade instead of hard appear ────── */
+.sidebar-overlay {
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+body.sidebar-open .sidebar-overlay { opacity: 1; }
+
+/* ── Topbar buttons — subtle scale on press ───────────────────────────── */
+.topbar-right .btn,
+.topbar-right button {
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color      var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    transform  var(--dur-instant) var(--ease-out);
+}
+.topbar-right .btn:active,
+.topbar-right button:active { transform: scale(0.94); }
+
+/* ── Buttons — unified motion + micro-depth ──────────────────────────── */
+.btn {
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color      var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    transform  var(--dur-instant) var(--ease-out);
+}
+.btn:hover { transform: translateY(-1px); }
+.btn:active { transform: translateY(0) scale(0.97); }
+.btn-primary:hover { box-shadow: 0 6px 18px -6px rgba(124, 106, 247, 0.55); }
+.btn-success:hover { box-shadow: 0 6px 18px -6px rgba(16, 185, 129, 0.45); }
+.btn-danger:hover  { box-shadow: 0 6px 18px -6px rgba(239, 68, 68, 0.45); }
+.btn-warning:hover { box-shadow: 0 6px 18px -6px rgba(245, 158, 11, 0.45); }
+/* Disabled buttons never lift. */
+.btn[disabled],
+.btn[disabled]:hover,
+.btn[disabled]:active { transform: none; box-shadow: none; }
+
+/* ── Stat cards — subtle lift on hover ───────────────────────────────── */
+.stat-card {
+  transition:
+    border-color var(--dur-base) var(--ease-out),
+    transform    var(--dur-base) var(--ease-out),
+    box-shadow   var(--dur-base) var(--ease-out);
+  will-change: transform;
+}
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px -12px rgba(0, 0, 0, 0.45);
+}
+
+/* ── Cards — gentle border + shadow lift ─────────────────────────────── */
+.card {
+  transition:
+    border-color var(--dur-base) var(--ease-out),
+    box-shadow   var(--dur-base) var(--ease-out);
+}
+
+/* ── Table rows — slower fade for a calmer scan ──────────────────────── */
+tbody tr {
+  transition: background var(--dur-fast) var(--ease-out);
+}
+tbody tr.clickable-row { transition: background var(--dur-fast) var(--ease-out), transform var(--dur-instant) var(--ease-out); }
+tbody tr.clickable-row:active { transform: scale(0.998); }
+
+/* ── Form inputs — unified focus motion ──────────────────────────────── */
+input, select, textarea {
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background   var(--dur-fast) var(--ease-out),
+    box-shadow   var(--dur-fast) var(--ease-out);
+}
+
+/* ── Filter chips — slightly springier toggle ────────────────────────── */
+.filter-chip {
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color      var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    transform  var(--dur-instant) var(--ease-out);
+}
+.filter-chip:active { transform: scale(0.96); }
+
+/* ── Bottom-nav (mobile) — gentler active glide ──────────────────────── */
+.bottom-nav-item {
+  transition:
+    color     var(--dur-fast) var(--ease-out),
+    transform var(--dur-instant) var(--ease-out);
+}
+.bottom-nav-item:active { transform: scale(0.96); }
+.bottom-nav-item .icon { transition: transform var(--dur-fast) var(--ease-spring); }
+.bottom-nav-item.active .icon { transform: translateY(-1px) scale(1.05); }
+
+/* ── Toasts — slide in from a slightly larger offset, gentler curve ──── */
+@keyframes tv-toast-in {
+  from { opacity: 0; transform: translateY(-12px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes tv-toast-out {
+  to { opacity: 0; transform: translateY(-10px) scale(0.96); }
+}
+.toast { animation: tv-toast-in var(--dur-base) var(--ease-spring) both; }
+.toast.toast-leaving { animation: tv-toast-out 180ms var(--ease-out) forwards; }
+
+/* ── Modal — softer scale entrance ───────────────────────────────────── */
+@keyframes tv-modal-in {
+  from { opacity: 0; transform: translateY(-10px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.tv-modal { animation: tv-modal-in var(--dur-base) var(--ease-spring) both; }
+.tv-modal-overlay { animation: tv-fade-in var(--dur-fast) var(--ease-out); }
+
+/* ── Loading bar — gradient sheen on the leading edge ───────────────── */
+#tv-loading-bar {
+  background:
+    linear-gradient(90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.25) 50%,
+      transparent 100%),
+    linear-gradient(90deg, var(--accent), #b794f4);
+  background-blend-mode: overlay, normal;
+}
+
+/* ── Status dot pulse smoothing (sidebar WG state) ───────────────────── */
+.status-dot { transition: background var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out); }
+
+/* ── Reduce-motion master switch ─────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .page-content { animation: none; }
+  body.tv-navigating .content { opacity: 1; transform: none; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   AESTHETIC POLISH (v1.10.0 — pass 2) — items 1-11
+   1.  Glass topbar + bottom-nav
+   2.  Bottom-nav SVG (markup change in base.html)
+   3.  Ambient gradient body background
+   4.  Refined focus ring
+   5.  Stagger grid entrance
+   6.  Number count-up (JS in app.js)
+   7.  Card hover sheen (CSS var driven; JS sets --mx/--my)
+   8.  Active nav indicator gradient
+   9.  Topbar status pill (markup change in base.html)
+   10. Hairline dividers (gradient borders on key separators)
+   11. Typography rhythm (numeric features, tighter heading tracking)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── 11. Typography rhythm ───────────────────────────────────────────── */
+:root {
+  --t-xs:   0.72rem;
+  --t-sm:   0.8rem;
+  --t-md:   0.92rem;
+  --t-lg:   1.08rem;
+  --t-xl:   1.4rem;
+}
+body {
+  font-feature-settings: "cv11", "ss01", "ss03";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+/* Numeric displays universally tabular */
+.stat-card-value,
+.noc-val,
+.noc-speed-val,
+.help-v,
+td .td-mono,
+.td-mono,
+.mono,
+[class*='-num'],
+[class*='num-'] {
+  font-variant-numeric: tabular-nums;
+}
+/* Headings — tighter tracking + display weight */
+.page-title,
+.card-title,
+.help-title,
+.tv-modal-hdr {
+  letter-spacing: -0.012em;
+  font-feature-settings: "cv11", "ss01", "ss03";
+}
+/* Uppercase labels — slightly looser tracking for legibility */
+.stat-card-label,
+.noc-lbl,
+thead th,
+.filter-chip-group-label {
+  letter-spacing: 0.075em;
+  font-weight: 600;
+}
+
+/* ── 3. Ambient background — radial gradient mesh ───────────────────── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 15% -10%, rgba(124, 106, 247, 0.10), transparent 50%),
+    radial-gradient(circle at 88% 110%, rgba(80, 70, 200, 0.07), transparent 55%),
+    radial-gradient(circle at 50% 50%, rgba(20, 23, 36, 0) 0%, rgba(8, 10, 18, 0.35) 100%);
+  background-attachment: fixed;
+}
+body.theme-light::before {
+  background:
+    radial-gradient(circle at 15% -10%, rgba(124, 106, 247, 0.08), transparent 50%),
+    radial-gradient(circle at 88% 110%, rgba(80, 70, 200, 0.05), transparent 55%);
+}
+
+/* ── 1. Glass topbar + bottom-nav ───────────────────────────────────── */
+.topbar {
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  backdrop-filter: saturate(140%) blur(14px);
+  -webkit-backdrop-filter: saturate(140%) blur(14px);
+  border-bottom: 1px solid transparent;
+  /* Hairline (item 10): replace flat border with a gradient under-line */
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--surface) 70%, transparent),
+                    color-mix(in srgb, var(--surface) 70%, transparent)),
+    linear-gradient(90deg,
+      transparent 0%,
+      var(--border) 18%,
+      var(--border) 82%,
+      transparent 100%);
+  background-clip: padding-box, border-box;
+  background-origin: padding-box, border-box;
+  background-repeat: no-repeat, no-repeat;
+  background-size: 100% 100%, 100% 1px;
+  background-position: 0 0, 0 100%;
+}
+.bottom-nav {
+  background: color-mix(in srgb, var(--surface) 75%, transparent);
+  backdrop-filter: saturate(140%) blur(14px);
+  -webkit-backdrop-filter: saturate(140%) blur(14px);
+}
+
+/* The sidebar gets a hairline right-edge gradient too (item 10) */
+.sidebar {
+  border-right-color: transparent;
+  background-image:
+    linear-gradient(var(--surface), var(--surface)),
+    linear-gradient(180deg,
+      transparent 0%,
+      var(--border) 8%,
+      var(--border) 92%,
+      transparent 100%);
+  background-clip: padding-box, border-box;
+  background-origin: padding-box, border-box;
+  background-repeat: no-repeat, no-repeat;
+  background-size: 100% 100%, 1px 100%;
+  background-position: 0 0, 100% 0;
+}
+
+/* ── 4. Refined focus ring ──────────────────────────────────────────── */
+:where(a, button, input, select, textarea, [tabindex]):focus { outline: none; }
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 75%, transparent);
+  outline-offset: 2px;
+  border-radius: 6px;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent);
+  transition:
+    outline-color var(--dur-fast) var(--ease-out),
+    box-shadow    var(--dur-fast) var(--ease-out);
+}
+/* Inputs already have their own focus styling — keep their box-shadow ring,
+   but make it consistent with the global accent + offset. */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+/* ── 5. Stagger grid entrance ──────────────────────────────────────── */
+@keyframes tv-grid-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.stats-grid > *,
+.noc-bar .noc-stat,
+.help-stats > * {
+  animation: tv-grid-in var(--dur-base) var(--ease-out) both;
+}
+.stats-grid > *:nth-child(1),
+.noc-bar .noc-stat:nth-child(1) { animation-delay: 0ms; }
+.stats-grid > *:nth-child(2),
+.noc-bar .noc-stat:nth-child(2) { animation-delay: 40ms; }
+.stats-grid > *:nth-child(3),
+.noc-bar .noc-stat:nth-child(3) { animation-delay: 80ms; }
+.stats-grid > *:nth-child(4),
+.noc-bar .noc-stat:nth-child(4) { animation-delay: 120ms; }
+.stats-grid > *:nth-child(5),
+.noc-bar .noc-stat:nth-child(5) { animation-delay: 160ms; }
+.stats-grid > *:nth-child(6),
+.noc-bar .noc-stat:nth-child(6) { animation-delay: 200ms; }
+.stats-grid > *:nth-child(7),
+.noc-bar .noc-stat:nth-child(7) { animation-delay: 240ms; }
+.stats-grid > *:nth-child(n+8),
+.noc-bar .noc-stat:nth-child(n+8) { animation-delay: 280ms; }
+
+/* ── 7. Card hover sheen ────────────────────────────────────────────── */
+.stat-card,
+.card.tv-sheen,
+.noc-panel.tv-sheen {
+  position: relative;
+  isolation: isolate;
+}
+.stat-card::after,
+.card.tv-sheen::after,
+.noc-panel.tv-sheen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(
+    240px circle at var(--mx, 50%) var(--my, 50%),
+    rgba(124, 106, 247, 0.10),
+    transparent 65%
+  );
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-out);
+  z-index: 0;
+}
+.stat-card:hover::after,
+.card.tv-sheen:hover::after,
+.noc-panel.tv-sheen:hover::after { opacity: 1; }
+/* The card content needs to sit above the sheen layer. */
+.stat-card > *,
+.card.tv-sheen > *,
+.noc-panel.tv-sheen > * { position: relative; z-index: 1; }
+
+/* ── 8. Active nav indicator gradient ──────────────────────────────── */
+.nav-link::before {
+  background: linear-gradient(180deg, var(--accent), #b794f4);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 50%, transparent);
+}
+.nav-link.active {
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--accent) 13%, transparent),
+    color-mix(in srgb, var(--accent) 4%, transparent) 60%,
+    transparent);
+}
+/* Bottom-nav active gets the same gradient feel via a top accent line */
+.bottom-nav-item.active::before {
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  height: 2px;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+/* ── 10. Hairline dividers (gradient) — applied to high-visibility seams  */
+.card-header,
+thead th,
+.help-hdr,
+.tv-modal-actions {
+  border-bottom-color: transparent;
+}
+.card-header {
+  background-image:
+    linear-gradient(var(--surface), var(--surface)),
+    linear-gradient(90deg, transparent, var(--border) 12%, var(--border) 88%, transparent);
+  background-origin: padding-box, border-box;
+  background-clip: padding-box, border-box;
+  background-repeat: no-repeat, no-repeat;
+  background-size: 100% 100%, 100% 1px;
+  background-position: 0 0, 0 100%;
+}
+.help-hdr {
+  background-image:
+    linear-gradient(var(--surface-2), var(--surface-2)),
+    linear-gradient(90deg, transparent, var(--border) 12%, var(--border) 88%, transparent);
+  background-origin: padding-box, border-box;
+  background-clip: padding-box, border-box;
+  background-repeat: no-repeat, no-repeat;
+  background-size: 100% 100%, 100% 1px;
+  background-position: 0 0, 0 100%;
+}
+thead th {
+  position: relative;
+}
+thead th::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border) 8%, var(--border) 92%, transparent);
+}
+
+/* ── 9. Topbar WireGuard status pill ────────────────────────────────── */
+.topbar-wg-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-2) 80%, transparent);
+  color: var(--text-muted);
+  margin-right: 4px;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    color        var(--dur-fast) var(--ease-out),
+    background   var(--dur-fast) var(--ease-out);
+}
+.topbar-wg-pill .topbar-wg-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--danger);
+  flex-shrink: 0;
+  transition: background var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.topbar-wg-pill.up {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 35%, var(--border));
+  background: color-mix(in srgb, var(--success) 8%, var(--surface-2));
+}
+.topbar-wg-pill.up .topbar-wg-dot {
+  background: var(--success);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--success) 70%, transparent);
+}
+.topbar-wg-pill.down {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface-2));
+}
+@media (max-width: 540px) {
+  .topbar-wg-pill .topbar-wg-text { display: none; }
+  .topbar-wg-pill { padding: 4px 6px; }
+}
+
+/* ── Bottom-nav SVG sizing (paired with template change) ──────────────── */
+.bottom-nav-item .icon-svg {
+  width: 22px; height: 22px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform var(--dur-fast) var(--ease-spring);
+}
+.bottom-nav-item.active .icon-svg { transform: translateY(-1px) scale(1.06); }
+
+/* ── 6. Count-up — paired with JS; sets reset state ──────────────────── */
+[data-tv-count] {
+  font-variant-numeric: tabular-nums;
+}
+
+
